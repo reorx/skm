@@ -170,7 +170,7 @@ class TestInstall:
 
         result2 = runner.invoke(cli, [*_cli_args(tmp_path), "install"])
         assert result2.exit_code == 0, result2.output
-        assert "Updating" in result2.output
+        assert "Using existing" in result2.output
 
         lock = _load_lock(tmp_path)
         assert len(lock["skills"]) == 1

@@ -42,7 +42,7 @@ def run_list_all(lock_path: Path, known_agents: dict[str, str]) -> None:
 
         click.echo(f"[{agent_name}] {compact_path(agent_dir)}")
         for entry in entries:
-            link_str = str(entry)
+            link_str = compact_path(str(entry))
             if link_str in managed_links:
                 skill = managed_links[link_str]
                 marker = click.style("skm", fg="green")

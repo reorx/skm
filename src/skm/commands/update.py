@@ -8,6 +8,7 @@ from skm.git import clone_or_pull, get_head_commit, get_log_between, repo_url_to
 from skm.linker import link_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
 from skm.types import InstalledSkill
+from skm.utils import compact_path
 
 
 def run_update(
@@ -77,9 +78,9 @@ def run_update(
         # Find matching detected skill
         matching = [d for d in detected if d.name == locked_skill.name]
         if not matching:
-            click.echo(f"  Warning: skill '{locked_skill.name}' no longer found in repo, removing")
+            click.echo(click.style(f"  Warning: skill '{locked_skill.name}' no longer found in repo, removing", fg="red"))
             for link_path in locked_skill.linked_to:
-                p = Path(link_path)
+                p = Path(link_path).expanduser()
                 if p.is_symlink():
                     p.unlink()
             stale_indices.append(i)
@@ -88,7 +89,7 @@ def run_update(
         linked_paths = []
         for agent_name, agent_dir in target_agents.items():
             link = link_skill(skill.path, skill.name, agent_dir)
-            linked_paths.append(str(link))
+            linked_paths.append(compact_path(str(link)))
 
         lock.skills[i] = InstalledSkill(
             name=skill.name,

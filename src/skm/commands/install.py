@@ -8,6 +8,7 @@ from skm.git import clone_or_pull, get_head_commit, repo_url_to_dirname
 from skm.linker import link_skill, unlink_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
 from skm.types import InstalledSkill, LockFile
+from skm.utils import compact_path
 
 
 def run_install(
@@ -27,15 +28,16 @@ def run_install(
         repo_dir_name = repo_url_to_dirname(repo_config.repo)
         repo_path = store_dir / repo_dir_name
 
-        # Clone or pull latest
-        if repo_path.exists():
-            click.echo(f"Updating {repo_config.repo}...")
+        # Clone if not present; skip if already cloned (use `update` to pull)
+        if repo_path.exists() and (repo_path / ".git").exists():
+            click.echo(click.style(f"Using existing {repo_config.repo}", fg="blue", bold=True))
         else:
-            click.echo(f"Cloning {repo_config.repo}...")
-        clone_or_pull(repo_config.repo, repo_path)
+            click.echo(click.style(f"Cloning {repo_config.repo}...", fg="blue", bold=True))
+            clone_or_pull(repo_config.repo, repo_path)
 
         commit = get_head_commit(repo_path)
         detected = detect_skills(repo_path)
+        click.echo(click.style(f"  Found skills: {', '.join(s.name for s in detected) or '(none)'}", dim=True))
         target_agents = resolve_target_agents(repo_config.agents, known_agents)
 
         # Filter to requested skills (if specified)
@@ -44,7 +46,7 @@ def run_install(
             skills_to_install = [s for s in detected if s.name in requested]
             missing = requested - {s.name for s in skills_to_install}
             if missing:
-                click.echo(f"  Warning: skills not found in repo: {missing}")
+                click.echo(click.style(f"  Warning: skills not found in repo: {missing}", fg="red"))
         else:
             # No filter → install all detected skills
             skills_to_install = detected
@@ -52,10 +54,11 @@ def run_install(
         for skill in skills_to_install:
             configured_skill_keys.add((skill.name, repo_config.repo))
             linked_paths = []
+            click.echo(click.style(f"  Install skill {skill.name}", fg="yellow"))
 
             for agent_name, agent_dir in target_agents.items():
                 link = link_skill(skill.path, skill.name, agent_dir)
-                linked_paths.append(str(link))
+                linked_paths.append(compact_path(str(link)))
                 click.echo(f"  Linked {skill.name} -> [{agent_name}] {link}")
 
             new_lock_skills.append(InstalledSkill(
@@ -66,12 +69,14 @@ def run_install(
                 linked_to=linked_paths,
             ))
 
+        click.echo()
+
     # Remove skills that were in old lock but no longer in config
     for old_skill in lock.skills:
         if (old_skill.name, old_skill.repo) not in configured_skill_keys:
             click.echo(f"  Removing {old_skill.name} (no longer in config)")
             for link_path in old_skill.linked_to:
-                p = Path(link_path)
+                p = Path(link_path).expanduser()
                 if p.is_symlink():
                     p.unlink()
 
