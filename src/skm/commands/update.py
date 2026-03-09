@@ -30,6 +30,10 @@ def run_update(
         click.echo(f"Skill '{skill_name}' is not installed.")
         raise SystemExit(1)
 
+    if old_skill.repo is None:
+        click.echo(f"Skill '{skill_name}' is from a local path, skipping update.")
+        return
+
     repo_dir_name = repo_url_to_dirname(old_skill.repo)
     repo_path = store_dir / repo_dir_name
 

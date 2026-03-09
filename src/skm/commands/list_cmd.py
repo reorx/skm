@@ -15,8 +15,10 @@ def run_list(lock_path: Path) -> None:
         return
 
     for skill in lock.skills:
-        click.echo(f"{skill.name}  ({skill.repo})")
-        click.echo(f"  commit: {skill.commit[:8]}")
+        source = skill.repo or skill.local_path or "unknown"
+        click.echo(f"{skill.name}  ({source})")
+        if skill.commit:
+            click.echo(f"  commit: {skill.commit[:8]}")
         for link in skill.linked_to:
             click.echo(f"  -> {compact_path(link)}")
 
@@ -46,7 +48,8 @@ def run_list_all(lock_path: Path, known_agents: dict[str, str]) -> None:
             if link_str in managed_links:
                 skill = managed_links[link_str]
                 marker = click.style("skm", fg="green")
-                click.echo(f"  {entry.name}  ({marker}, {skill.repo})")
+                source = skill.repo or skill.local_path or "unknown"
+                click.echo(f"  {entry.name}  ({marker}, {source})")
             else:
                 click.echo(f"  {entry.name}")
         click.echo()

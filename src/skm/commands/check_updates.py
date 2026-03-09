@@ -13,9 +13,12 @@ def run_check_updates(lock_path: Path, store_dir: Path) -> None:
         click.echo("No skills installed.")
         return
 
-    # Group by repo
+    # Group by repo, skip local_path packages
     repos: dict[str, list] = {}
     for skill in lock.skills:
+        if skill.repo is None:
+            click.echo(f"Skipping local path package: {skill.name}")
+            continue
         repos.setdefault(skill.repo, []).append(skill)
 
     has_updates = False

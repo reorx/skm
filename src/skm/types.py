@@ -16,9 +16,28 @@ class AgentsConfig(BaseModel):
 
 
 class SkillRepoConfig(BaseModel):
-    repo: str
+    repo: str | None = None
+    local_path: str | None = None
     skills: list[str] | None = None
     agents: AgentsConfig | None = None
+
+    @model_validator(mode="after")
+    def check_source(self):
+        if self.repo and self.local_path:
+            raise ValueError("Cannot specify both 'repo' and 'local_path'; exactly one must be set")
+        if not self.repo and not self.local_path:
+            raise ValueError("Must specify exactly one of 'repo' or 'local_path'")
+        return self
+
+    @property
+    def is_local(self) -> bool:
+        return self.local_path is not None
+
+    @property
+    def source_key(self) -> str:
+        if self.local_path:
+            return str(Path(self.local_path).expanduser())
+        return self.repo
 
 
 class DefaultAgentsConfig(BaseModel):
@@ -43,8 +62,9 @@ class SkmConfig(BaseModel):
 
 class InstalledSkill(BaseModel):
     name: str
-    repo: str
-    commit: str
+    repo: str | None = None
+    local_path: str | None = None
+    commit: str | None = None
     skill_path: str  # relative path within repo to the skill dir
     linked_to: list[str]  # list of absolute symlink paths
 
