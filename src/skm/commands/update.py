@@ -70,12 +70,19 @@ def run_update(
     )
 
     # Update all skills from this repo in the lock
+    stale_indices = []
     for i, locked_skill in enumerate(lock.skills):
         if locked_skill.repo != old_skill.repo:
             continue
         # Find matching detected skill
         matching = [d for d in detected if d.name == locked_skill.name]
         if not matching:
+            click.echo(f"  Warning: skill '{locked_skill.name}' no longer found in repo, removing")
+            for link_path in locked_skill.linked_to:
+                p = Path(link_path)
+                if p.is_symlink():
+                    p.unlink()
+            stale_indices.append(i)
             continue
         skill = matching[0]
         linked_paths = []
@@ -90,6 +97,10 @@ def run_update(
             skill_path=skill.relative_path,
             linked_to=linked_paths,
         )
+
+    # Remove stale entries (iterate in reverse to preserve indices)
+    for i in reversed(stale_indices):
+        lock.skills.pop(i)
 
     save_lock(lock, lock_path)
     click.echo(f"Lock file updated.")
