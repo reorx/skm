@@ -57,7 +57,7 @@ def run_install(
             for agent_name, agent_dir in target_agents.items():
                 link = link_skill(skill.path, skill.name, agent_dir)
                 linked_paths.append(compact_path(str(link)))
-                click.echo(f"  Linked {skill.name} -> [{agent_name}] {link}")
+                click.echo(f"  Linked {skill.name} -> [{agent_name}] {compact_path(str(link))}")
 
             new_lock_skills.append(InstalledSkill(
                 name=skill.name,
