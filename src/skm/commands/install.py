@@ -27,12 +27,12 @@ def run_install(
         repo_dir_name = repo_url_to_dirname(repo_config.repo)
         repo_path = store_dir / repo_dir_name
 
-        # Clone if not already cloned
-        if not repo_path.exists():
-            click.echo(f"Cloning {repo_config.repo}...")
-            clone_or_pull(repo_config.repo, repo_path)
+        # Clone or pull latest
+        if repo_path.exists():
+            click.echo(f"Updating {repo_config.repo}...")
         else:
-            click.echo(f"Already cloned: {repo_config.repo}")
+            click.echo(f"Cloning {repo_config.repo}...")
+        clone_or_pull(repo_config.repo, repo_path)
 
         commit = get_head_commit(repo_path)
         detected = detect_skills(repo_path)
