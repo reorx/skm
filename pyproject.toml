@@ -26,6 +26,7 @@ packages = ["src/skm"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["network: tests that require network access"]
 
 [dependency-groups]
 dev = [

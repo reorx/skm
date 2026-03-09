@@ -1,4 +1,6 @@
+import pytest
 from skm.detect import detect_skills
+from skm.git import clone_or_pull
 
 
 def _write_skill_md(path, name):
@@ -55,3 +57,25 @@ def test_detect_skills_empty_repo(tmp_path):
     (tmp_path / "README.md").write_text("hello")
     skills = detect_skills(tmp_path)
     assert skills == []
+
+
+@pytest.mark.network
+def test_detect_taste_skill_repo(tmp_path):
+    """Detect skills from Leonxlnx/taste-skill repo."""
+    dest = tmp_path / "taste-skill"
+    clone_or_pull("https://github.com/Leonxlnx/taste-skill", dest)
+    skills = detect_skills(dest)
+    names = {s.name for s in skills}
+    assert "design-taste-frontend" in names
+    assert "redesign-existing-projects" in names
+
+
+@pytest.mark.network
+def test_detect_vercel_agent_skills_repo(tmp_path):
+    """Detect skills from vercel-labs/agent-skills repo."""
+    dest = tmp_path / "agent-skills"
+    clone_or_pull("https://github.com/vercel-labs/agent-skills", dest)
+    skills = detect_skills(dest)
+    names = {s.name for s in skills}
+    assert "vercel-react-best-practices" in names
+    assert "vercel-react-native-skills" in names
