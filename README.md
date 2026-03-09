@@ -13,11 +13,12 @@ uv tool install git+https://github.com/reorx/skm
 1. Create `~/.config/skm/skills.yaml`:
 
 ```yaml
-- repo: https://github.com/vercel-labs/agent-skills
-  skills:
-    - vercel-react-best-practices
-    - vercel-react-native-skills
-- repo: https://github.com/blader/humanizer
+packages:
+  - repo: https://github.com/vercel-labs/agent-skills
+    skills:
+      - vercel-react-best-practices
+      - vercel-react-native-skills
+  - repo: https://github.com/blader/humanizer
 ```
 
 2. Run install:
@@ -43,14 +44,20 @@ Skills are cloned and symlinked into your agent directories (`~/.claude/skills/`
 `~/.config/skm/skills.yaml`:
 
 ```yaml
-- repo: https://github.com/vercel-labs/agent-skills
-  skills:                    # optional: install only these skills (omit = all)
-    - vercel-react-best-practices
-  agents:                    # optional: control which agents get this skill
-    excludes:
-      - openclaw
+agents:
+  default:                   # optional: select which agents are active (omit = all)
+    - claude
+    - standard
 
-- repo: https://github.com/blader/humanizer   # installs all detected skills to all agents
+packages:
+  - repo: https://github.com/vercel-labs/agent-skills
+    skills:                  # optional: install only these skills (omit = all)
+      - vercel-react-best-practices
+    agents:                  # optional: further filter agents for this package
+      excludes:
+        - standard
+
+  - repo: https://github.com/blader/humanizer   # installs all detected skills to default agents
 ```
 
 ## Skill Detection

@@ -14,7 +14,7 @@ A CLI tool that manages AI agent skills by cloning GitHub repos, detecting skill
 src/skm/
 ├── cli.py              # Click CLI entry point (group + subcommands)
 ├── types.py            # Pydantic data models + constants
-├── config.py           # Load skills.yaml → list[SkillRepoConfig]
+├── config.py           # Load skills.yaml → SkmConfig
 ├── lock.py             # Read/write skills-lock.yaml
 ├── detect.py           # Walk cloned repos for SKILL.md files
 ├── git.py              # Clone, pull, fetch, commit SHA helpers (unified run_cmd error handling)
@@ -38,7 +38,7 @@ tests/
 
 ## Key Paths
 
-- **Config:** `~/.config/skm/skills.yaml` — user-defined list of repos and skills to install
+- **Config:** `~/.config/skm/skills.yaml` — YAML dict with `packages` (repo list) and optional `agents.default`
 - **Lock:** `~/.config/skm/skills-lock.yaml` — tracks installed skills, commits, symlink paths
 - **Store:** `~/.local/share/skm/skills/` — cloned repos cached here
 - **Agent dirs:** Skills are symlinked into each agent's skill directory (e.g. `~/.claude/skills/`, `~/.codex/skills/`)
@@ -66,15 +66,25 @@ Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from 
 
 ## Config Format (skills.yaml)
 
+Top-level YAML dict with `packages` and optional `agents`:
+
 ```yaml
-- repo: https://github.com/vercel-labs/agent-skills
-  skills:                    # optional: filter to specific skills (omit = all)
-    - react-best-practices
-  agents:                    # optional: control which agents get this skill
-    excludes:
-      - openclaw
-- repo: https://github.com/blader/humanizer   # installs all detected skills to all agents
+agents:
+  default:                   # optional: select which KNOWN_AGENTS are active (omit = all)
+    - claude
+    - standard
+
+packages:
+  - repo: https://github.com/vercel-labs/agent-skills
+    skills:                  # optional: filter to specific skills (omit = all)
+      - react-best-practices
+    agents:                  # optional: further filter agents for this package
+      excludes:
+        - standard
+  - repo: https://github.com/blader/humanizer   # installs all detected skills to default agents
 ```
+
+`agents.default` selects which agents from `KNOWN_AGENTS` are used as the base set. Per-package `agents.includes/excludes` then filters from that base set.
 
 ## Skill Detection
 
@@ -107,7 +117,7 @@ uv run pytest -k "install" -v            # filter by name
 
 All tests run entirely within pytest's `tmp_path` — no real agent directories, config files, or git repos are touched. This is achieved two ways:
 
-- **Unit tests** (`test_install.py`, `test_linker.py`, etc.): call `run_*` functions directly with explicit `config_path`, `lock_path`, `store_dir`, and `known_agents` parameters pointing to `tmp_path` subdirectories.
+- **Unit tests** (`test_install.py`, `test_linker.py`, etc.): call `run_*` functions directly with explicit `config`/`lock_path`/`store_dir`/`known_agents` parameters pointing to `tmp_path` subdirectories.
 - **E2E tests** (`test_cli_e2e.py`): invoke the CLI through Click's `CliRunner` with `--config`, `--store`, `--lock`, and `--agents-dir` flags to redirect all I/O into `tmp_path`.
 
 Git repos used in tests are local repos created via `git init` inside `tmp_path` — no network access required. Tests marked with `@pytest.mark.network` clone real GitHub repos and require internet access.
@@ -135,7 +145,7 @@ skm --config /tmp/test.yaml \
 
 - `_make_skill_repo(base, repo_name, skills)` — creates a local git repo with specified skills. Each skill is `{"name": str, "subdir": bool}` where `subdir=True` (default) puts it under `skills/<name>/`, `False` makes it a singleton at repo root.
 - `_cli_args(tmp_path)` — returns the common `--config/--store/--lock/--agents-dir` flags for full isolation.
-- `_write_config(tmp_path, repos)` — writes a `skills.yaml` from a list of repo dicts.
+- `_write_config(tmp_path, repos, agents=None)` — writes a `skills.yaml` with `{"packages": repos}` format, optionally including `agents` config.
 - `_load_lock(tmp_path)` — loads the lock file as a plain dict for assertions.
 
 ### Writing New Tests
@@ -145,7 +155,7 @@ To add a new e2e test, follow this pattern:
 ```python
 def test_my_scenario(self, tmp_path):
     repo = _make_skill_repo(tmp_path, "my-repo", [{"name": "my-skill"}])
-    _write_config(tmp_path, [{"repo": str(repo)}])
+    _write_config(tmp_path, [{"repo": str(repo)}])  # wraps in {"packages": ...}
 
     runner = CliRunner()
     result = runner.invoke(cli, [*_cli_args(tmp_path), "install"])
