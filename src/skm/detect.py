@@ -35,7 +35,7 @@ def _walk_for_skills(walk_root: Path, repo_path: Path) -> list[DetectedSkill]:
     """Walk subdirectories looking for SKILL.md. Stop descending once found."""
     results = []
     for child in sorted(walk_root.iterdir()):
-        if not child.is_dir():
+        if not child.is_dir() or child.is_symlink():
             continue
         if child.name.startswith("."):
             continue
