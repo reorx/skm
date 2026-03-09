@@ -1,0 +1,91 @@
+#!/bin/bash
+# Link a skill from skills/ to configured agent skill directories
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKILLS_SRC="$SCRIPT_DIR/skills"
+
+# --- Agent targets ---
+# Format: "label:path"
+# Use $HOME explicitly (not ~), env vars are expanded at runtime.
+TARGETS=(
+    "agents:$HOME/.agents/skills"
+    "claude:$HOME/.claude/skills"
+    "codex:$HOME/.codex/skills"
+    "openclaw:${OPENCLAW_WORKSPACE_PATH:-}/skills"
+)
+
+available_skills() {
+    for d in "$SKILLS_SRC"/*/; do
+        name="$(basename "$d")"
+        [[ "$name" == _* ]] && continue
+        echo "  $name"
+    done
+}
+
+usage() {
+    echo "Usage: $(basename "$0") <path-to-skill>"
+    echo ""
+    echo "Example: $(basename "$0") ./skills/create-skill"
+    echo ""
+    echo "Links the skill directory to all configured agent directories:"
+    for entry in "${TARGETS[@]}"; do
+        label="${entry%%:*}"
+        path="${entry#*:}"
+        echo "  [$label] $path/"
+    done
+    echo ""
+    echo "Available skills:"
+    available_skills
+    exit 1
+}
+
+[[ $# -lt 1 ]] && usage
+
+src="$(cd "$1" 2>/dev/null && pwd)" || {
+    echo "Error: '$1' is not a valid directory"
+    exit 1
+}
+skill="$(basename "$src")"
+
+link_to() {
+    local label="$1"
+    local target_dir="$2"
+    local dest="$target_dir/$skill"
+
+    # skip targets with empty or unset base path
+    if [[ -z "$target_dir" || "$target_dir" == "/skills" ]]; then
+        echo "  [$label] skipped (path not set)"
+        return
+    fi
+
+    if [[ -L "$dest" ]]; then
+        existing="$(readlink "$dest")"
+        if [[ "$existing" == "$src" ]]; then
+            echo "  [$label] already linked"
+            return
+        fi
+        echo "  [$label] updating (was $existing)"
+        rm "$dest"
+    elif [[ -e "$dest" ]]; then
+        echo "  [$label] replacing existing dir"
+        rm -rf "$dest"
+    else
+        echo "  [$label] linking"
+    fi
+
+    mkdir -p "$target_dir"
+    ln -s "$src" "$dest"
+    echo "  [$label] $dest -> $src"
+}
+
+echo "Linking skill '$skill':"
+
+for entry in "${TARGETS[@]}"; do
+    label="${entry%%:*}"
+    path="${entry#*:}"
+    link_to "$label" "$path"
+done
+
+echo "Done."

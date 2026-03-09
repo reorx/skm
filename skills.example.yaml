@@ -1,0 +1,45 @@
+# skills path: ./skills
+- repo: https://github.com/vercel-labs/agent-skills
+  skills:
+    - react-best-practices
+    - react-native-skills
+    - web-design-guidelines
+  agents:
+    excludes:
+     - openclaw
+# skills path: ./skills
+- repo: https://github.com/ibelick/ui-skills
+  skills:
+    - baseline-ui
+# skills path: ./
+- repo: https://github.com/Leonxlnx/taste-skill
+  skills:
+    - taste-skill
+    - redesign-skill
+# skills path: ./skills
+- repo: https://github.com/OthmanAdi/planning-with-files
+  skills:
+    - planning-with-files
+  agents:
+    excludes:
+     - openclaw
+# the whole repo is a single skill
+- repo: https://github.com/blader/humanizer
+# skills path: ./better-auth
+- repo: http://github.com/better-auth/skills
+  skills:
+    - better-auth-best-practices
+    - create-auth-skill
+# skills path: ./skills
+- repo: https://github.com/PsiACE/skills
+  skills:
+    - friendly-python
+# skills path: ./skills
+- repo: https://github.com/SawyerHood/dev-browser
+  skills:
+    - dev-browser
+  agents:
+    excludes:
+      - openclaw
+#- repo: https://github.com/vercel-labs/agent-browser
+#- repo: https://github.com/browser-use/browser-use
