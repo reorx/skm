@@ -41,17 +41,34 @@ def run_install(
 
         click.echo()
 
-    # Remove skills that were in old lock but no longer in config
+    # Build set of all new linked paths for comparison
+    new_linked_paths: set[str] = set()
+    for skill in new_lock_skills:
+        for lp in skill.linked_to:
+            new_linked_paths.add(lp)
+
+    # Remove stale links: any old linked_to path not present in new state
+    stale_header_printed = False
     for old_skill in lock.skills:
         old_source = old_skill.repo or old_skill.local_path or ''
-        if (old_skill.name, old_source) not in configured_skill_keys:
-            click.echo(f'  Removing {old_skill.name} (no longer in config)')
-            for link_path in old_skill.linked_to:
+        skill_still_configured = (old_skill.name, old_source) in configured_skill_keys
+
+        for link_path in old_skill.linked_to:
+            if link_path not in new_linked_paths:
                 p = Path(link_path).expanduser()
-                if p.is_symlink():
-                    p.unlink()
-                elif p.is_dir():
-                    shutil.rmtree(p)
+                if skill_still_configured:
+                    reason = 'agent config changed'
+                else:
+                    reason = 'no longer in config'
+                if p.is_symlink() or p.is_dir():
+                    if not stale_header_printed:
+                        click.echo(click.style('Removing stale links', fg='red', bold=True))
+                        stale_header_printed = True
+                    if p.is_symlink():
+                        p.unlink()
+                    else:
+                        shutil.rmtree(p)
+                    click.echo(click.style(f'  {compact_path(link_path)} for {old_skill.name} ({reason})', fg='red'))
 
     new_lock = LockFile(skills=new_lock_skills)
     save_lock(new_lock, lock_path)

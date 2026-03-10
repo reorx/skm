@@ -58,7 +58,7 @@ This detects available skills, lets you pick which ones to install (unless a spe
 
 | Command | Description |
 |---|---|
-| `skm install` | Install all packages from config. Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent. |
+| `skm install` | Install all packages from config. Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent — also removes stale links (see below). |
 | `skm install <source> [skill]` | Install directly from a repo URL or local path without editing config. Interactively select skills and agents, then auto-update config. |
 | `skm list` | Show installed skills and their linked paths. |
 | `skm list --all` | Show all skills across all agent directories, marking which are managed by skm. |
@@ -92,6 +92,16 @@ packages:
 ```
 
 Each package must specify exactly one of `repo` or `local_path`. Local path packages use the directory directly (no cloning) and are skipped by `check-updates` and `update`.
+
+## Install Sync Behavior
+
+`skm install` treats `skills.yaml` as a declarative state file. Each run syncs the agent directories to match the config:
+
+- **New skills** are linked to agent directories.
+- **Removed skills** (dropped from a package's `skills:` list, or entire package removed) have their links deleted.
+- **Agent config changes** (e.g. adding `excludes: [openclaw]`) remove links from excluded agents while keeping links in others.
+
+Only links tracked in `skills-lock.yaml` are affected. Manually created files or skills installed by other tools in agent directories are never touched.
 
 ## Skill Detection
 

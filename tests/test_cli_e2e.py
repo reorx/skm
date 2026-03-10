@@ -227,7 +227,8 @@ class TestInstall:
         _write_config(tmp_path, [{'repo': str(repo), 'skills': ['keep-me']}])
         result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
         assert result.exit_code == 0, result.output
-        assert 'Removing remove-me' in result.output
+        assert 'Removing stale links' in result.output
+        assert 'for remove-me (no longer in config)' in result.output
 
         assert (tmp_path / 'agents' / 'claude' / 'keep-me').is_symlink()
         assert not (tmp_path / 'agents' / 'claude' / 'remove-me').exists()
