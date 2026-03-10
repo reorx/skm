@@ -248,6 +248,20 @@ def _source_matches(installed_skill, source_key: str, is_local: bool) -> bool:
     return installed_skill.repo == source_key
 
 
+@cli.command()
+@click.argument('skill_name')
+@click.pass_context
+def remove(ctx, skill_name: str):
+    """Remove an installed skill."""
+    from skm.commands.remove import run_remove
+
+    run_remove(
+        skill_name=skill_name,
+        config_path=ctx.obj['config_path'],
+        lock_path=ctx.obj['lock_path'],
+    )
+
+
 @cli.command(name='check-updates')
 @click.pass_context
 def check_updates(ctx):
