@@ -34,13 +34,35 @@ skm install
 
 Skills are cloned (or symlinked from local paths) into your agent directories (`~/.claude/skills/`, `~/.codex/skills/`, etc.).
 
+### Install from a source directly
+
+You can also install skills directly from a repo URL or local path — no need to edit `skills.yaml` first:
+
+```bash
+# Install from a GitHub repo (interactive skill & agent selection)
+skm install https://github.com/vercel-labs/agent-skills
+
+# Install a specific skill by name
+skm install https://github.com/vercel-labs/agent-skills vercel-react-best-practices
+
+# Install from a local directory
+skm install ~/Code/my-custom-skills
+
+# Skip interactive prompts with --agents-includes / --agents-excludes
+skm install https://github.com/blader/humanizer --agents-includes claude,codex
+```
+
+This detects available skills, lets you pick which ones to install (unless a specific skill name is given), and automatically adds the package to your `skills.yaml` config.
+
 ## Commands
 
 | Command | Description |
 |---|---|
-| `skm install` | Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent. |
+| `skm install` | Install all packages from config. Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent. |
+| `skm install <source> [skill]` | Install directly from a repo URL or local path without editing config. Interactively select skills and agents, then auto-update config. |
 | `skm list` | Show installed skills and their linked paths. |
 | `skm list --all` | Show all skills across all agent directories, marking which are managed by skm. |
+| `skm view <source>` | Browse and preview skills from a repo URL or local path without installing. |
 | `skm check-updates` | Fetch remotes and show available updates (skips `local_path` packages). |
 | `skm update <skill>` | Pull latest for a skill's repo, re-detect, re-link, update lock (skips `local_path` packages). |
 
