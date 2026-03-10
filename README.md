@@ -1,6 +1,6 @@
 # SKM - Skill Manager
 
-A CLI tool that manages AI agent skills from GitHub repos. Clone repos, detect skills via `SKILL.md`, and symlink them into agent directories — all driven by a single YAML config.
+A CLI tool that manages AI agent skills from GitHub repos or local directories. Clone repos or link local paths, detect skills via `SKILL.md`, and symlink them into agent directories — all driven by a single YAML config.
 
 ## Install
 
@@ -19,6 +19,7 @@ packages:
       - vercel-react-best-practices
       - vercel-react-native-skills
   - repo: https://github.com/blader/humanizer
+  - local_path: ~/Code/my-custom-skills       # use a local directory instead of a git repo
 ```
 
 2. Run install:
@@ -27,17 +28,17 @@ packages:
 skm install
 ```
 
-Skills are cloned and symlinked into your agent directories (`~/.claude/skills/`, `~/.codex/skills/`, etc.).
+Skills are cloned (or symlinked from local paths) into your agent directories (`~/.claude/skills/`, `~/.codex/skills/`, etc.).
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `skm install` | Clone repos, detect skills, symlink to agents, write lock file. Idempotent — won't pull if repo is already cloned. |
+| `skm install` | Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent. |
 | `skm list` | Show installed skills and their linked paths. |
 | `skm list --all` | Show all skills across all agent directories, marking which are managed by skm. |
-| `skm check-updates` | Fetch remotes and show available updates without changing local repos. |
-| `skm update <skill>` | Pull latest for a skill's repo, re-detect, re-link, update lock. |
+| `skm check-updates` | Fetch remotes and show available updates (skips `local_path` packages). |
+| `skm update <skill>` | Pull latest for a skill's repo, re-detect, re-link, update lock (skips `local_path` packages). |
 
 ## Config Format
 
@@ -58,7 +59,13 @@ packages:
         - standard
 
   - repo: https://github.com/blader/humanizer   # installs all detected skills to default agents
+
+  - local_path: ~/Code/my-custom-skills         # use a local directory as package source
+    skills:
+      - my-skill
 ```
+
+Each package must specify exactly one of `repo` or `local_path`. Local path packages use the directory directly (no cloning) and are skipped by `check-updates` and `update`.
 
 ## Skill Detection
 
