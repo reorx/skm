@@ -86,6 +86,16 @@ def update(ctx, skill_name: str):
     )
 
 
+@cli.command()
+@click.argument('source')
+@click.pass_context
+def view(ctx, source: str):
+    """Browse and read skills from a repo or local path."""
+    from skm.commands.view import run_view
+
+    run_view(source=source, store_dir=ctx.obj['store_dir'])
+
+
 @cli.command(name='list')
 @click.option(
     '--all',
