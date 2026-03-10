@@ -4,11 +4,12 @@ from pydantic import BaseModel, field_validator, model_validator
 
 # --- Config models (parsed from skills.yaml) ---
 
+
 class AgentsConfig(BaseModel):
     includes: list[str] | None = None
     excludes: list[str] | None = None
 
-    @model_validator(mode="after")
+    @model_validator(mode='after')
     def check_mutual_exclusion(self):
         if self.includes is not None and self.excludes is not None:
             raise ValueError("Cannot specify both 'includes' and 'excludes' in agents config")
@@ -21,7 +22,7 @@ class SkillRepoConfig(BaseModel):
     skills: list[str] | None = None
     agents: AgentsConfig | None = None
 
-    @model_validator(mode="after")
+    @model_validator(mode='after')
     def check_source(self):
         if self.repo and self.local_path:
             raise ValueError("Cannot specify both 'repo' and 'local_path'; exactly one must be set")
@@ -43,13 +44,13 @@ class SkillRepoConfig(BaseModel):
 class DefaultAgentsConfig(BaseModel):
     default: list[str] | None = None
 
-    @field_validator("default")
+    @field_validator('default')
     @classmethod
     def check_known_agents(cls, v: list[str] | None) -> list[str] | None:
         if v is not None:
             unknown = [a for a in v if a not in KNOWN_AGENTS]
             if unknown:
-                raise ValueError(f"Unknown agents: {unknown}. Known agents: {list(KNOWN_AGENTS.keys())}")
+                raise ValueError(f'Unknown agents: {unknown}. Known agents: {list(KNOWN_AGENTS.keys())}')
         return v
 
 
@@ -59,6 +60,7 @@ class SkmConfig(BaseModel):
 
 
 # --- Lock file models ---
+
 
 class InstalledSkill(BaseModel):
     name: str
@@ -75,8 +77,10 @@ class LockFile(BaseModel):
 
 # --- Runtime models ---
 
+
 class DetectedSkill(BaseModel):
     """A skill detected by walking a cloned repo."""
+
     name: str  # from SKILL.md frontmatter
     path: Path  # absolute path to the skill directory
     relative_path: str  # relative path within the repo
@@ -85,13 +89,22 @@ class DetectedSkill(BaseModel):
 # --- Constants ---
 
 KNOWN_AGENTS: dict[str, str] = {
-    "standard": "~/.agents/skills",
-    "claude": "~/.claude/skills",
-    "codex": "~/.codex/skills",
-    "openclaw": "~/.openclaw/skills",
+    'standard': '~/.agents/skills',
+    'claude': '~/.claude/skills',
+    'codex': '~/.codex/skills',
+    'openclaw': '~/.openclaw/skills',
 }
 
-CONFIG_DIR = Path("~/.config/skm").expanduser()
-CONFIG_PATH = CONFIG_DIR / "skills.yaml"
-LOCK_PATH = CONFIG_DIR / "skills-lock.yaml"
-STORE_DIR = Path("~/.local/share/skm/skills").expanduser()
+# Per-agent install options. Agents not listed here use defaults (symlink).
+# Options:
+#   use_hardlink: bool - use hard links instead of symlinks for skill installation
+AGENT_OPTIONS: dict[str, dict] = {
+    'openclaw': {
+        'use_hardlink': True,
+    },
+}
+
+CONFIG_DIR = Path('~/.config/skm').expanduser()
+CONFIG_PATH = CONFIG_DIR / 'skills.yaml'
+LOCK_PATH = CONFIG_DIR / 'skills-lock.yaml'
+STORE_DIR = Path('~/.local/share/skm/skills').expanduser()

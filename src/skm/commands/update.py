@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import click
@@ -40,20 +41,20 @@ def run_update(
     old_commit = old_skill.commit
 
     # Pull latest
-    click.echo(f"Pulling {old_skill.repo}...")
+    click.echo(f'Pulling {old_skill.repo}...')
     clone_or_pull(old_skill.repo, repo_path)
     new_commit = get_head_commit(repo_path)
 
     if old_commit == new_commit:
-        click.echo(f"  Already up to date ({old_commit[:8]})")
+        click.echo(f'  Already up to date ({old_commit[:8]})')
         return
 
     # Show changes
     log = get_log_between(repo_path, old_commit, new_commit)
-    click.echo(f"  Updated {old_commit[:8]} -> {new_commit[:8]}")
+    click.echo(f'  Updated {old_commit[:8]} -> {new_commit[:8]}')
     if log:
         for line in log.splitlines():
-            click.echo(f"    {line}")
+            click.echo(f'    {line}')
 
     # Re-detect and re-link
     detected = detect_skills(repo_path)
@@ -80,17 +81,21 @@ def run_update(
         # Find matching detected skill
         matching = [d for d in detected if d.name == locked_skill.name]
         if not matching:
-            click.echo(click.style(f"  Warning: skill '{locked_skill.name}' no longer found in repo, removing", fg="red"))
+            click.echo(
+                click.style(f"  Warning: skill '{locked_skill.name}' no longer found in repo, removing", fg='red')
+            )
             for link_path in locked_skill.linked_to:
                 p = Path(link_path).expanduser()
                 if p.is_symlink():
                     p.unlink()
+                elif p.is_dir():
+                    shutil.rmtree(p)
             stale_indices.append(i)
             continue
         skill = matching[0]
         linked_paths = []
         for agent_name, agent_dir in target_agents.items():
-            link = link_skill(skill.path, skill.name, agent_dir)
+            link = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
             linked_paths.append(compact_path(str(link)))
 
         lock.skills[i] = InstalledSkill(
@@ -106,4 +111,4 @@ def run_update(
         lock.skills.pop(i)
 
     save_lock(lock, lock_path)
-    click.echo(f"Lock file updated.")
+    click.echo(f'Lock file updated.')

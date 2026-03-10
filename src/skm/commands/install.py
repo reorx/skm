@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import click
@@ -49,6 +50,8 @@ def run_install(
                 p = Path(link_path).expanduser()
                 if p.is_symlink():
                     p.unlink()
+                elif p.is_dir():
+                    shutil.rmtree(p)
 
     new_lock = LockFile(skills=new_lock_skills)
     save_lock(new_lock, lock_path)
@@ -80,11 +83,11 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
 
         for agent_name, agent_dir in target_agents.items():
             try:
-                link = link_skill(skill.path, skill.name, agent_dir)
+                link = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
             except FileExistsError as e:
                 if force or _confirm_override(f'  {e}. Override?'):
                     click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link = link_skill(skill.path, skill.name, agent_dir, force=True)
+                    link = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
                 else:
                     click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
                     continue
@@ -133,11 +136,11 @@ def _install_repo(repo_config, store_dir, new_lock_skills, configured_skill_keys
 
         for agent_name, agent_dir in target_agents.items():
             try:
-                link = link_skill(skill.path, skill.name, agent_dir)
+                link = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
             except FileExistsError as e:
                 if force or _confirm_override(f'  {e}. Override?'):
                     click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link = link_skill(skill.path, skill.name, agent_dir, force=True)
+                    link = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
                 else:
                     click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
                     continue
