@@ -142,8 +142,7 @@ def upsert_package(config: SkmConfig, new_pkg: SkillRepoConfig) -> SkillRepoConf
         if existing.source_key == new_key:
             # Found existing package
             if existing.skills is None:
-                # Existing has all skills — still update agents config
-                existing.agents = new_pkg.agents
+                # Existing has all skills — keep existing agents config
                 return existing
 
             if new_pkg.skills is not None:
@@ -151,8 +150,6 @@ def upsert_package(config: SkmConfig, new_pkg: SkillRepoConfig) -> SkillRepoConf
                 merged = list(dict.fromkeys(existing.skills + new_pkg.skills))
                 existing.skills = merged
 
-            # Update agents config
-            existing.agents = new_pkg.agents
             return None
 
     # Not found: append

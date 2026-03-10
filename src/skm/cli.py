@@ -157,10 +157,21 @@ def install(ctx, source, skill_name, force, agents_includes, agents_excludes):
         return
 
     # Determine agents config
+    # Check if repo already exists in config — if so, reuse its agents setting
+    existing_pkg = _find_package_by_source(
+        config,
+        SkillRepoConfig(
+            repo=source if not is_local else None, local_path=str(source_path) if is_local else None
+        ).source_key,
+        is_local,
+    )
     if agents_includes:
         agents_config = AgentsConfig(includes=[a.strip() for a in agents_includes.split(',')])
     elif agents_excludes:
         agents_config = AgentsConfig(excludes=[a.strip() for a in agents_excludes.split(',')])
+    elif existing_pkg is not None:
+        # Repo already in config, keep existing agents setting
+        agents_config = existing_pkg.agents
     else:
         agent_names = list(KNOWN_AGENTS.keys())
         # Pre-select based on config default
