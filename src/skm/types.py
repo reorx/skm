@@ -103,7 +103,7 @@ _AGENT_ENV_OVERRIDES: dict[str, str] = {
 }
 
 
-def get_known_agents() -> dict[str, str]:
+def _get_known_agents() -> dict[str, str]:
     """Return known agents dict, applying env-var overrides where set."""
     import os
 
@@ -115,7 +115,7 @@ def get_known_agents() -> dict[str, str]:
     return result
 
 
-KNOWN_AGENTS: dict[str, str] = get_known_agents()
+KNOWN_AGENTS: dict[str, str] = _get_known_agents()
 
 # Per-agent install options. Agents not listed here use defaults (symlink).
 # Options:
