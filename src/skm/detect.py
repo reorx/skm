@@ -6,7 +6,7 @@ from skm.types import DetectedSkill
 
 def parse_skill_name(skill_md_path: Path) -> str:
     """Extract 'name' from SKILL.md YAML frontmatter."""
-    text = skill_md_path.read_text()
+    text = skill_md_path.read_text(encoding="utf-8")
     match = re.match(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
     if not match:
         raise ValueError(f"No frontmatter found in {skill_md_path}")

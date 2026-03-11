@@ -31,6 +31,8 @@ def _hardlink_tree(src: Path, dst: Path) -> None:
     """Recreate directory structure from src at dst, hard-linking all files."""
     dst.mkdir(parents=True, exist_ok=True)
     for item in src.iterdir():
+        if item.name.startswith("."):
+            continue
         target = dst / item.name
         if item.is_dir():
             _hardlink_tree(item, target)
