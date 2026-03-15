@@ -109,8 +109,9 @@ class TestInstallFromLocalPath:
             result = runner.invoke(cli, [*_cli_args(tmp_path), 'install', str(repo)])
 
         assert result.exit_code == 0, result.output
-        assert 'Linked skill-a' in result.output
-        assert 'Linked skill-b' in result.output
+        assert 'skill-a' in result.output
+        assert 'skill-b' in result.output
+        assert 'added 2 skills' in result.output
 
         # Config file should be created
         config = _load_config(tmp_path)
@@ -169,7 +170,8 @@ class TestInstallFromSourceWithSkillName:
             result = runner.invoke(cli, [*_cli_args(tmp_path), 'install', str(repo), 'skill-a'])
 
         assert result.exit_code == 0, result.output
-        assert 'Linked skill-a' in result.output
+        assert 'skill-a' in result.output
+        assert 'added 1 skill' in result.output
 
         config = _load_config(tmp_path)
         pkg = config['packages'][0]
@@ -338,7 +340,7 @@ class TestInstallUpsertConfig:
         result = runner.invoke(cli, [*_cli_args(tmp_path), 'install', str(repo), 'skill-b'])
 
         assert result.exit_code == 0, result.output
-        assert 'Linked skill-b' in result.output
+        assert 'skill-b' in result.output
 
 
 class TestInstallMultiSelectCancelled:
@@ -410,4 +412,5 @@ class TestInstallWithoutSource:
         result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
 
         assert result.exit_code == 0, result.output
-        assert 'Linked skill-a' in result.output
+        assert 'skill-a' in result.output
+        assert 'added 1 skill' in result.output
