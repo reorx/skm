@@ -111,7 +111,7 @@ def _get_known_agents() -> dict[str, str]:
     for agent, env_var in _AGENT_ENV_OVERRIDES.items():
         val = os.environ.get(env_var)
         if val:
-            result[agent] = str(Path(val) / 'skills')
+            result[agent] = str(Path(val).expanduser() / 'skills')
     return result
 
 
