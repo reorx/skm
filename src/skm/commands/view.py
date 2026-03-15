@@ -24,7 +24,7 @@ def _open_viewer(skill_md: Path, viewer: str | None) -> None:
     elif viewer == 'less':
         subprocess.run(['less', str(skill_md)])
     else:
-        click.echo_via_pager(skill_md.read_text())
+        click.echo_via_pager(skill_md.read_text(encoding="utf-8"))
 
 
 def run_view(source: str, store_dir: Path) -> None:
