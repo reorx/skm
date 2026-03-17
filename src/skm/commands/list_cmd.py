@@ -9,10 +9,11 @@ from skm.utils import compact_path
 
 def _agent_name_from_link(link: str) -> str | None:
     """Derive the agent name from a symlink path by matching against KNOWN_AGENTS."""
+    expanded_link = str(Path(link).expanduser())
     for name, base in KNOWN_AGENTS.items():
         expanded = str(Path(base).expanduser())
         # Match against both expanded and compact (~) forms
-        if link.startswith(expanded) or link.startswith(base):
+        if expanded_link.startswith(expanded):
             return name
     return None
 

@@ -1,8 +1,13 @@
 import subprocess
 from pathlib import Path
+
+import skm.types as types_mod
+from click.testing import CliRunner
+
+from skm.cli import cli
 from skm.commands.install import run_install
 from skm.config import load_config
-from skm.types import KNOWN_AGENTS
+from skm.lock import load_lock
 
 
 def _make_skill_repo(tmp_path, name, skills_subdir=True):
@@ -154,3 +159,45 @@ def test_install_removes_links_for_excluded_agent(tmp_path):
 
     assert (tmp_path / 'agents' / 'claude' / 'skills' / 'my-skill').is_symlink()
     assert not (tmp_path / 'agents' / 'codex' / 'skills' / 'my-skill').exists()
+
+
+def test_install_uses_env_override_path_in_lock(tmp_path, monkeypatch):
+    repo = _make_skill_repo(tmp_path, 'my-skill')
+
+    config_path = tmp_path / 'config' / 'skills.yaml'
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(f'agents:\n  default:\n    - claude\npackages:\n  - repo: {repo}\n    skills:\n      - my-skill\n')
+
+    lock_path = tmp_path / 'config' / 'skills-lock.yaml'
+    store_dir = tmp_path / 'store'
+
+    home = tmp_path / 'home'
+    claude_config = home / '.config' / 'claude'
+    claude_skills = claude_config / 'skills'
+
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(claude_config))
+    monkeypatch.setattr('skm.cli.KNOWN_AGENTS', types_mod._get_known_agents())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            '--config',
+            str(config_path),
+            '--lock',
+            str(lock_path),
+            '--store',
+            str(store_dir),
+            'install',
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (claude_skills / 'my-skill').is_symlink()
+
+    config = load_config(config_path)
+    assert config.agents.default == ['claude']
+
+    lock = load_lock(lock_path)
+    assert lock.skills[0].linked_to == ['~/.config/claude/skills/my-skill']
