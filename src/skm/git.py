@@ -51,7 +51,7 @@ def clone_or_pull(repo_url: str, dest: Path) -> None:
     else:
         _validate_repo_url(repo_url)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        run_cmd(["git", "clone", repo_url, str(dest)])
+        run_cmd(["git", "clone", "--filter=blob:none", repo_url, str(dest)])
 
 
 def get_head_commit(repo_path: Path) -> str:
