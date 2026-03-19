@@ -1,3 +1,9 @@
+import errno
+import shutil
+
+import pytest
+
+import skm.linker as linker
 from skm.linker import resolve_target_agents, link_skill, unlink_skill
 
 
@@ -74,8 +80,6 @@ def test_link_skill_existing_dir_raises(tmp_path):
     (agent_dir / 'my-skill').mkdir()
     (agent_dir / 'my-skill' / 'some-file.md').write_text('hello')
 
-    import pytest
-
     with pytest.raises(FileExistsError):
         link_skill(skill_src, 'my-skill', str(agent_dir))
 
@@ -125,6 +129,140 @@ def test_link_skill_different_source_replaces(tmp_path):
     assert linked.is_symlink()
     assert linked.resolve() == skill_src_2.resolve()
     assert status == 'replaced'
+
+
+def test_link_skill_hardlink_mode_falls_back_to_reflink(monkeypatch, tmp_path):
+    """Hardlink mode falls back to reflink/COW clone when source and target devices differ."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    source_file = skill_src / 'SKILL.md'
+    source_file.write_text('---\nname: my-skill\n---\n')
+
+    agent_dir = tmp_path / 'agent' / 'skills'
+    agent_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
+    monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
+
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+
+    cloned_file = linked / 'SKILL.md'
+    assert linked.is_dir() and not linked.is_symlink()
+    assert status == 'new'
+    assert cloned_file.read_text() == source_file.read_text()
+    assert cloned_file.stat().st_ino != source_file.stat().st_ino
+
+
+def test_link_skill_reuses_existing_materialized_copy(monkeypatch, tmp_path):
+    """Hardlink mode accepts an existing managed reflink-style copy on reinstall."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
+
+    agent_dir = tmp_path / 'agent' / 'skills'
+    agent_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
+    monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
+
+    link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    (skill_src / 'extra.md').write_text('new content')
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    assert linked.is_dir() and not linked.is_symlink()
+    assert status == 'exists'
+    assert (linked / 'extra.md').read_text() == 'new content'
+
+
+def test_link_skill_reflink_mode_falls_back_to_copy(monkeypatch, tmp_path):
+    """Unsupported reflink errors fall back to a plain copy."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    source_file = skill_src / 'SKILL.md'
+    source_file.write_text('---\nname: my-skill\n---\n')
+
+    agent_dir = tmp_path / 'agent' / 'skills'
+    agent_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
+
+    def _raise_unsupported(_src, _dst):
+        raise OSError(errno.ENOTSUP, 'no reflink here')
+
+    monkeypatch.setattr(linker, '_clone_file_reflink', _raise_unsupported)
+
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+
+    copied_file = linked / 'SKILL.md'
+    assert linked.is_dir() and not linked.is_symlink()
+    assert status == 'new'
+    assert copied_file.read_text() == source_file.read_text()
+    assert copied_file.stat().st_ino != source_file.stat().st_ino
+
+
+def test_link_skill_reflink_mode_preserves_unhandled_oserror(monkeypatch, tmp_path):
+    """Unexpected reflink errors should not be swallowed."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
+
+    agent_dir = tmp_path / 'agent' / 'skills'
+    agent_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
+
+    def _raise_unexpected(_src, _dst):
+        raise OSError(errno.EIO, 'disk error')
+
+    monkeypatch.setattr(linker, '_clone_file_reflink', _raise_unexpected)
+
+    with pytest.raises(OSError, match='disk error'):
+        link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+
+
+def test_select_materialization_mode_uses_reflink_across_devices(monkeypatch, tmp_path):
+    class _Stat:
+        def __init__(self, st_dev):
+            self.st_dev = st_dev
+
+    class _FakePath:
+        def __init__(self, name, st_dev):
+            self._name = name
+            self._stat = _Stat(st_dev)
+
+        def stat(self):
+            return self._stat
+
+        def __str__(self):
+            return self._name
+
+    src_a = _FakePath('src-a', 11)
+    target_dir = _FakePath('target', 22)
+    monkeypatch.setattr(linker, 'reflink_supported', lambda: True)
+
+    assert linker._select_materialization_mode(src_a, target_dir) == 'reflink'
+
+
+def test_select_materialization_mode_uses_copy_without_fcntl(monkeypatch, tmp_path):
+    class _Stat:
+        def __init__(self, st_dev):
+            self.st_dev = st_dev
+
+    class _FakePath:
+        def __init__(self, name, st_dev):
+            self._name = name
+            self._stat = _Stat(st_dev)
+
+        def stat(self):
+            return self._stat
+
+        def __str__(self):
+            return self._name
+
+    src_path = _FakePath('src', 11)
+    target_dir = _FakePath('target', 22)
+    monkeypatch.setattr(linker, 'reflink_supported', lambda: False)
+
+    assert linker._select_materialization_mode(src_path, target_dir) == 'copy'
 
 
 def test_unlink_skill(tmp_path):

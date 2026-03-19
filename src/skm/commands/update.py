@@ -128,7 +128,7 @@ def _update_repo(
         skill = matching[0]
         linked_paths = []
         for agent_name, agent_dir in target_agents.items():
-            link, _status = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
+            link, _status = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
             linked_paths.append(compact_path(str(link)))
 
         lock.skills[i] = InstalledSkill(

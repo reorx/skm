@@ -383,6 +383,34 @@ class TestUpdate:
         # The commit should be 40 hex chars (full SHA)
         assert len(old_commit) == 40
 
+    def test_update_removes_deleted_materialized_files(self, tmp_path):
+        repo = _make_skill_repo(tmp_path, 'repo-upd3', [{'name': 'upd-skill'}])
+        tracked_file = repo / 'skills' / 'upd-skill' / 'extra.md'
+        tracked_file.write_text('old content')
+        subprocess.run(['git', 'add', '.'], cwd=repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add extra'], cwd=repo, capture_output=True, check=True)
+
+        _write_config(tmp_path, [{'repo': str(repo)}])
+
+        runner = CliRunner()
+        install_result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert install_result.exit_code == 0, install_result.output
+
+        standard_file = tmp_path / 'agents' / 'standard' / 'upd-skill' / 'extra.md'
+        openclaw_file = tmp_path / 'agents' / 'openclaw' / 'upd-skill' / 'extra.md'
+        assert standard_file.exists()
+        assert openclaw_file.exists()
+
+        tracked_file.unlink()
+        subprocess.run(['git', 'add', '-A'], cwd=repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'remove extra'], cwd=repo, capture_output=True, check=True)
+
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'update', 'upd-skill'])
+        assert result.exit_code == 0, result.output
+        assert 'remove extra' in result.output
+        assert not standard_file.exists()
+        assert not openclaw_file.exists()
+
 
 class TestCheckUpdates:
     def test_check_updates_no_skills(self, tmp_path):

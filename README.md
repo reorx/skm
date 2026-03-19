@@ -130,6 +130,47 @@ Skills are symlinked into these directories by default:
 | `codex` | `~/.codex/skills/` |
 | `openclaw` | `~/.openclaw/skills/` |
 
+## Copy Strategy
+
+When skm links a skill into an agent directory, it picks a strategy based on the agent config and filesystem:
+
+### 1. Symlink (default)
+
+A symbolic link from `<agent_dir>/skills/<skill_name>` → `<store>/<skill_name>`. This is the default for all agents. Changes in the store are immediately visible.
+
+### 2. Hardlink
+
+When `use_hardlink: true` is set for an agent in `AGENT_OPTIONS`, skm creates hardlinks instead. Each file in the skill directory gets its own hardlink pointing to the same inode as the source. This only works when source and target are on the **same filesystem/device**.
+
+### 3. Reflink (copy-on-write)
+
+When hardlinks can't be used (source and target on **different devices**), skm attempts a reflink/COW clone. This creates an independent copy that shares physical disk blocks with the source until either side is modified — fast and space-efficient.
+
+The reflink backend is platform-specific:
+
+| Platform | Mechanism | Supported filesystems |
+|---|---|---|
+| **Linux** | `FICLONE` ioctl (`fcntl.ioctl`) | Btrfs, XFS, OCFS2, and others with reflink support |
+| **macOS** | `clonefile(2)` syscall (via `ctypes`) | APFS (default since macOS 10.13) |
+
+### 4. Plain copy (fallback)
+
+If reflink is not available (unsupported filesystem, non-Unix platform, etc.), skm falls back to a plain `shutil.copy2` — a full byte copy with metadata preserved.
+
+### Selection flow
+
+```
+use_hardlink enabled?
+├── No  → symlink
+└── Yes → same device?
+    ├── Yes → hardlink
+    └── No  → reflink supported?
+        ├── Yes → reflink (COW clone)
+        └── No  → plain copy
+```
+
+The reflink implementation is isolated in `src/skm/clonefile.py` with dedicated tests in `tests/test_clonefile.py`.
+
 ## CLI Path Overrides
 
 Override default paths for testing or custom setups:
