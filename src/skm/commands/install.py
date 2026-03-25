@@ -259,7 +259,8 @@ def _install_repo(
     repo_dir_name = repo_url_to_dirname(repo_config.repo)
     repo_path = store_dir / repo_dir_name
 
-    if repo_path.exists() and (repo_path / '.git').exists():
+    was_existing = repo_path.exists() and (repo_path / '.git').exists()
+    if was_existing:
         if verbose:
             click.echo(click.style(f'Using existing {repo_config.repo}', fg='blue', bold=True))
     else:
@@ -280,7 +281,22 @@ def _install_repo(
         requested = set(repo_config.skills)
         skills_to_install = [s for s in detected if s.name in requested]
         missing = requested - {s.name for s in skills_to_install}
-        if missing:
+        if missing and was_existing:
+            # Repo was already cloned but requested skills are missing — pull and retry
+            if not verbose:
+                _progress(f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...')
+            else:
+                click.echo(click.style(f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...', fg='blue'))
+            clone_or_pull(repo_config.repo, repo_path)
+            commit = get_head_commit(repo_path)
+            detected = detect_skills(repo_path)
+            if verbose:
+                click.echo(click.style(f'  Found skills after pull: {", ".join(s.name for s in detected) or "(none)"}', dim=True))
+            skills_to_install = [s for s in detected if s.name in requested]
+            still_missing = requested - {s.name for s in skills_to_install}
+            if still_missing:
+                click.echo(click.style(f'  Warning: skills not found in repo: {still_missing}', fg='red'))
+        elif missing:
             click.echo(click.style(f'  Warning: skills not found in repo: {missing}', fg='red'))
     else:
         skills_to_install = detected

@@ -264,6 +264,40 @@ class TestInstall:
         dup_skills = [s for s in lock['skills'] if s['name'] == 'dup-skill']
         assert len(dup_skills) == 1
 
+    def test_install_pulls_when_requested_skills_missing(self, tmp_path):
+        """When requested skills aren't found in an existing repo, pull and retry."""
+        # Create repo with only one skill initially
+        repo = _make_skill_repo(tmp_path, 'repo-pull', [{'name': 'old-skill'}])
+
+        # First install: only request old-skill
+        _write_config(tmp_path, [{'repo': str(repo), 'skills': ['old-skill']}])
+        runner = CliRunner()
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / 'agents' / 'claude' / 'old-skill').is_symlink()
+
+        # Add a new skill to the source repo
+        new_skill_dir = repo / 'skills' / 'new-skill'
+        new_skill_dir.mkdir(parents=True, exist_ok=True)
+        (new_skill_dir / 'SKILL.md').write_text(
+            '---\nname: new-skill\ndescription: a new skill\n---\n# new-skill\n'
+        )
+        subprocess.run(['git', 'add', '.'], cwd=repo, capture_output=True, check=True)
+        subprocess.run(['git', 'commit', '-m', 'add new-skill'], cwd=repo, capture_output=True, check=True)
+
+        # Now request both skills — new-skill won't be in the stale clone
+        _write_config(tmp_path, [{'repo': str(repo), 'skills': ['old-skill', 'new-skill']}])
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert result.exit_code == 0, result.output
+
+        # new-skill should be found after auto-pull, no warning
+        assert 'Warning: skills not found' not in result.output
+        assert (tmp_path / 'agents' / 'claude' / 'new-skill').is_symlink()
+
+        lock = _load_lock(tmp_path)
+        names = {s['name'] for s in lock['skills']}
+        assert names == {'old-skill', 'new-skill'}
+
 
 class TestList:
     def test_list_empty(self, tmp_path):
