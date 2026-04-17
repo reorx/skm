@@ -1,10 +1,7 @@
-import os
-import tomllib
-from importlib.resources import files
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator
 
 
 # --- Config models (parsed from skills.yaml) ---
@@ -46,24 +43,6 @@ class SkillRepoConfig(BaseModel):
         return self.repo
 
 
-class DefaultAgentsConfig(BaseModel):
-    default: list[str] | None = None
-
-    @field_validator('default')
-    @classmethod
-    def check_known_agents(cls, v: list[str] | None) -> list[str] | None:
-        if v is not None:
-            unknown = [a for a in v if a not in KNOWN_AGENTS]
-            if unknown:
-                raise ValueError(f'Unknown agents: {unknown}. Known agents: {list(KNOWN_AGENTS.keys())}')
-        return v
-
-
-class SkmConfig(BaseModel):
-    packages: list[SkillRepoConfig]
-    agents: DefaultAgentsConfig | None = None
-
-
 AgentInstallMode = Literal['symlink', 'materialize']
 
 
@@ -73,8 +52,19 @@ class AgentSpec(BaseModel):
     install_mode: AgentInstallMode = 'symlink'
 
 
-class AgentSpecLoadError(RuntimeError):
-    """Raised when bundled agent specs cannot be loaded."""
+class AgentOverride(BaseModel):
+    path: str | None = None
+    install_mode: AgentInstallMode | None = None
+
+
+class GlobalAgentsConfig(BaseModel):
+    default: list[str] | None = None
+    override: dict[str, AgentOverride] | None = None
+
+
+class SkmConfig(BaseModel):
+    packages: list[SkillRepoConfig]
+    agents: GlobalAgentsConfig | None = None
 
 
 # --- Lock file models ---
@@ -105,52 +95,6 @@ class DetectedSkill(BaseModel):
 
 
 # --- Constants ---
-
-def _load_agent_specs() -> dict[str, AgentSpec]:
-    try:
-        raw_text = files('skm').joinpath('agent_specs.toml').read_text(encoding='utf-8')
-    except FileNotFoundError as exc:
-        raise AgentSpecLoadError(
-            "Missing bundled agent_specs.toml. Reinstall skm or check your package build."
-        ) from exc
-
-    try:
-        data = tomllib.loads(raw_text)
-    except tomllib.TOMLDecodeError as exc:
-        raise AgentSpecLoadError('Invalid bundled agent_specs.toml.') from exc
-
-    raw_agents = data.get('agents')
-    if not isinstance(raw_agents, dict):
-        raise AgentSpecLoadError("Invalid bundled agent_specs.toml: missing [agents] table.")
-
-    return {name: AgentSpec(**raw_spec) for name, raw_spec in raw_agents.items()}
-
-
-AGENT_SPECS: dict[str, AgentSpec] = _load_agent_specs()
-
-
-def _get_known_agents() -> dict[str, str]:
-    """Return known agent paths, applying env-var overrides where set."""
-
-    result: dict[str, str] = {}
-    for agent, spec in AGENT_SPECS.items():
-        if spec.parent_env_var:
-            val = os.environ.get(spec.parent_env_var)
-            if val:
-                result[agent] = str(Path(val).expanduser() / 'skills')
-                continue
-        result[agent] = spec.path
-    return result
-
-
-KNOWN_AGENTS: dict[str, str] = _get_known_agents()
-
-
-def get_agent_install_mode(agent_name: str) -> AgentInstallMode:
-    spec = AGENT_SPECS.get(agent_name)
-    if spec is None:
-        return 'symlink'
-    return spec.install_mode
 
 CONFIG_DIR = Path('~/.config/skm').expanduser()
 CONFIG_PATH = CONFIG_DIR / 'skills.yaml'

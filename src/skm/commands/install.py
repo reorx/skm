@@ -6,9 +6,9 @@ import click
 
 from skm.detect import detect_skills
 from skm.git import clone_or_pull, get_head_commit, repo_url_to_dirname
-from skm.linker import link_skill, unlink_skill, resolve_target_agents
+from skm.linker import link_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
-from skm.types import InstalledSkill, LockFile, SkillRepoConfig, SkmConfig
+from skm.types import AgentSpec, InstalledSkill, LockFile, SkillRepoConfig, SkmConfig
 from skm.utils import compact_path
 
 
@@ -83,7 +83,7 @@ def run_install(
     config: SkmConfig,
     lock_path: Path,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, AgentSpec],
     force: bool = False,
     verbose: bool = False,
 ) -> None:
@@ -213,12 +213,12 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
 
         for agent_name, agent_dir in target_agents.items():
             try:
-                link, status = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
+                link, status = link_skill(skill.path, skill.name, agent_dir)
             except FileExistsError as e:
                 if force or _confirm_override(f'  {e}. Override?'):
                     if verbose:
                         click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link, status = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
+                    link, status = link_skill(skill.path, skill.name, agent_dir, force=True)
                 else:
                     if verbose:
                         click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
@@ -320,12 +320,12 @@ def _install_repo(
 
         for agent_name, agent_dir in target_agents.items():
             try:
-                link, status = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
+                link, status = link_skill(skill.path, skill.name, agent_dir)
             except FileExistsError as e:
                 if force or _confirm_override(f'  {e}. Override?'):
                     if verbose:
                         click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link, status = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
+                    link, status = link_skill(skill.path, skill.name, agent_dir, force=True)
                 else:
                     if verbose:
                         click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
@@ -363,7 +363,7 @@ def run_install_package(
     repo_config: SkillRepoConfig,
     lock_path: Path,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, AgentSpec],
     force: bool = False,
     verbose: bool = False,
 ) -> None:

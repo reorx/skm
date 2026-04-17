@@ -83,6 +83,9 @@ agents:
   default:                   # optional: select which agents are active (omit = all)
     - claude
     - standard
+  override:                  # optional: override built-in agent path or install mode
+    codex:
+      path: ~/.custom-codex/skills
 
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
@@ -132,23 +135,23 @@ Skills are installed into these directories by default:
 | `openclaw` | `~/.openclaw/skills/` |
 | `pi` | `~/.pi/agent/skills/` |
 
-`standard` and `openclaw` use materialized installs instead of symlinks. These built-in defaults are packaged with `skm`; in the repo they are defined in `src/skm/agent_specs.toml`.
+`standard` and `openclaw` use materialized installs instead of symlinks. These built-in defaults are defined in code.
 
 ## Copy Strategy
 
-When skm links a skill into an agent directory, it picks a strategy based on the agent config and filesystem:
+When skm installs a skill into an agent directory, it picks a strategy based on the agent spec and filesystem:
 
 ### 1. Symlink (default)
 
 A symbolic link from `<agent_dir>/skills/<skill_name>` → `<store>/<skill_name>`. This is the default for all agents. Changes in the store are immediately visible.
 
-### 2. Hardlink
+### 2. Materialize
 
-When `use_hardlink: true` is set for an agent in `AGENT_OPTIONS`, skm creates hardlinks instead. Each file in the skill directory gets its own hardlink pointing to the same inode as the source. This only works when source and target are on the **same filesystem/device**.
+When an agent uses `install_mode: materialize`, skm creates a real directory instead of a symlink. On the same filesystem/device it uses hardlinks, so each file in the installed skill directory points to the same inode as the source.
 
 ### 3. Reflink (copy-on-write)
 
-When hardlinks can't be used (source and target on **different devices**), skm attempts a reflink/COW clone. This creates an independent copy that shares physical disk blocks with the source until either side is modified — fast and space-efficient.
+When a materialized install cannot use hardlinks because source and target are on **different devices**, skm attempts a reflink/COW clone. This creates an independent copy that shares physical disk blocks with the source until either side is modified — fast and space-efficient.
 
 The reflink backend is platform-specific:
 
@@ -159,14 +162,14 @@ The reflink backend is platform-specific:
 
 ### 4. Plain copy (fallback)
 
-If reflink is not available (unsupported filesystem, non-Unix platform, etc.), skm falls back to a plain `shutil.copy2` — a full byte copy with metadata preserved.
+If reflink is not available for a materialized install (unsupported filesystem, non-Unix platform, etc.), skm falls back to a plain `shutil.copy2` — a full byte copy with metadata preserved.
 
 ### Selection flow
 
 ```
-use_hardlink enabled?
-├── No  → symlink
-└── Yes → same device?
+install_mode == symlink?
+├── Yes → symlink
+└── No  → same device?
     ├── Yes → hardlink
     └── No  → reflink supported?
         ├── Yes → reflink (COW clone)

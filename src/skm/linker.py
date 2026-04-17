@@ -3,16 +3,18 @@ import shutil
 from pathlib import Path
 from typing import Literal
 
-from skm.types import AgentsConfig, get_agent_install_mode
+import click
+
 from skm.clonefile import clone_file, is_reflink_unsupported, reflink_supported
+from skm.types import AgentSpec, AgentsConfig
 
 MaterializationMode = Literal['hardlink', 'reflink', 'copy']
 
 
 def resolve_target_agents(
     agents_config: AgentsConfig | None,
-    known_agents: dict[str, str],
-) -> dict[str, str]:
+    known_agents: dict[str, AgentSpec],
+) -> dict[str, AgentSpec]:
     """Determine which agents to install to based on includes/excludes."""
     if agents_config is None:
         return dict(known_agents)
@@ -36,17 +38,17 @@ def _copy_file(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
-def _get_materialized_entries(path: Path) -> dict[str, Path]:
-    """Return managed candidate entries, excluding hidden files and symlinks."""
-    return {item.name: item for item in path.iterdir() if not item.name.startswith('.') and not item.is_symlink()}
-
-
 def _remove_path(path: Path) -> None:
     """Remove a file or directory."""
     if path.is_dir() and not path.is_symlink():
         shutil.rmtree(path)
     else:
         path.unlink()
+
+
+def _get_materialized_entries(path: Path) -> dict[str, Path]:
+    """Return managed candidate entries, excluding hidden files and symlinks."""
+    return {item.name: item for item in path.iterdir() if not item.name.startswith('.') and not item.is_symlink()}
 
 
 def _supports_copy_fallback(exc: OSError) -> bool:
@@ -87,14 +89,9 @@ def _materialize_tree(
     dst.mkdir(parents=True, exist_ok=True)
     current_mode = mode
     source_entries = _get_materialized_entries(src)
-    target_entries = _get_materialized_entries(dst)
 
-    for name, target in target_entries.items():
-        if name not in source_entries:
-            _remove_path(target)
-
-    for item in source_entries.values():
-        target = dst / item.name
+    for name, item in source_entries.items():
+        target = dst / name
         if item.is_dir():
             if target.exists() and not target.is_dir():
                 _remove_path(target)
@@ -106,6 +103,20 @@ def _materialize_tree(
     return current_mode
 
 
+def _has_stale_materialized_entries(link_path: Path, skill_src: Path) -> bool:
+    """Return True when materialized target contains managed entries not present in the source."""
+    source_entries = _get_materialized_entries(skill_src)
+    target_entries = _get_materialized_entries(link_path)
+
+    for name, target_item in target_entries.items():
+        if name not in source_entries:
+            return True
+        source_item = source_entries[name]
+        if target_item.is_dir() and source_item.is_dir() and _has_stale_materialized_entries(target_item, source_item):
+            return True
+    return False
+
+
 def _is_managed_materialized_dir(link_path: Path, skill_src: Path) -> bool:
     """Check whether link_path looks like a managed materialized copy."""
     if not link_path.is_dir() or link_path.is_symlink():
@@ -115,10 +126,10 @@ def _is_managed_materialized_dir(link_path: Path, skill_src: Path) -> bool:
     target_entries = _get_materialized_entries(link_path)
 
     compared_any = False
-    for name, source_item in source_entries.items():
-        target_item = target_entries.get(name)
-        if target_item is None:
+    for name, target_item in target_entries.items():
+        if name not in source_entries:
             continue
+        source_item = source_entries[name]
         compared_any = True
         if source_item.is_dir():
             if not target_item.is_dir():
@@ -144,23 +155,29 @@ def _select_materialization_mode(skill_src: Path, target_dir: Path) -> Materiali
 
 
 def link_skill(
-    skill_src: Path, skill_name: str, agent_skills_dir: str, force: bool = False, agent_name: str = ''
+    skill_src: Path, skill_name: str, agent_spec: AgentSpec, force: bool = False
 ) -> tuple[Path, str]:
-    """Create a symlink or materialized tree from agent_skills_dir/skill_name -> skill_src.
+    """Create a symlink or materialized tree from agent_spec.path/skill_name -> skill_src.
 
     Returns (link_path, status) where status is "new", "exists", or "replaced".
     """
-    install_mode = get_agent_install_mode(agent_name)
-    target_dir = Path(agent_skills_dir)
+    target_dir = Path(agent_spec.path)
     target_dir.mkdir(parents=True, exist_ok=True)
     link_path = target_dir / skill_name
 
-    if install_mode == 'materialize':
+    if agent_spec.install_mode == 'materialize':
         # Materialized mode: prefer hardlink, fall back to reflink when devices differ.
         mode = _select_materialization_mode(skill_src, target_dir)
         if link_path.exists() and not link_path.is_symlink():
             if _is_managed_materialized_dir(link_path, skill_src):
                 # Already managed, refresh to pick up any changes.
+                if _has_stale_materialized_entries(link_path, skill_src):
+                    click.echo(
+                        click.style(
+                            f'  Warning: materialized copy at {link_path} contains stale files that were not removed',
+                            fg='yellow',
+                        )
+                    )
                 _materialize_tree(skill_src, link_path, mode)
                 return (link_path, 'exists')
             if not force:

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from skm.git import fetch, get_head_commit, get_remote_head_commit, get_log_between, repo_url_to_dirname
+from skm.git import fetch, get_log_between, get_remote_head_commit, repo_url_to_dirname
 from skm.lock import load_lock
 
 

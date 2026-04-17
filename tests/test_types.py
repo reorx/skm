@@ -1,7 +1,7 @@
-import skm.types as types_mod
 import pytest
 
-from skm.types import AgentSpecLoadError, AgentsConfig, SkillRepoConfig, get_agent_install_mode
+import skm.agents as agents_mod
+from skm.types import AgentsConfig, GlobalAgentsConfig, SkillRepoConfig
 
 
 def test_skill_repo_config_minimal():
@@ -41,57 +41,41 @@ def test_skill_repo_config_with_agents():
     assert cfg.agents.excludes == ["openclaw"]
 
 
-def test_get_known_agents_uses_parent_env_override(monkeypatch, tmp_path):
+def test_resolve_agent_specs_uses_parent_env_override(monkeypatch, tmp_path):
     home = tmp_path / 'home'
     claude_config_dir = home / '.claude-custom'
 
     monkeypatch.setenv('HOME', str(home))
     monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(claude_config_dir))
 
-    agents = types_mod._get_known_agents()
-    assert agents['claude'] == str(claude_config_dir / 'skills')
+    agents = agents_mod.resolve_agent_specs(None)
+    assert agents['claude'].path == str(claude_config_dir / 'skills')
 
 
-def test_load_agent_specs_from_toml():
-    specs = types_mod._load_agent_specs()
+def test_get_all_agent_specs_defaults():
+    specs = agents_mod.get_all_agent_specs(None)
     assert specs['standard'].install_mode == 'materialize'
     assert specs['claude'].parent_env_var == 'CLAUDE_CONFIG_DIR'
     assert specs['pi'].parent_env_var == 'PI_CODING_AGENT_DIR'
 
 
-def test_load_agent_specs_raises_clear_error_when_resource_missing(monkeypatch):
-    class _MissingResource:
-        def joinpath(self, _name):
-            return self
+def test_get_all_agent_specs_applies_override():
+    specs = agents_mod.get_all_agent_specs(
+        GlobalAgentsConfig(
+            override={
+                'codex': {
+                    'path': '~/.custom-codex/skills',
+                    'install_mode': 'materialize',
+                }
+            }
+        )
+    )
 
-        def read_text(self, *, encoding):
-            raise FileNotFoundError('missing')
-
-    monkeypatch.setattr(types_mod, 'files', lambda _package: _MissingResource())
-
-    with pytest.raises(AgentSpecLoadError, match='Missing bundled agent_specs.toml'):
-        types_mod._load_agent_specs()
-
-
-def test_load_agent_specs_raises_clear_error_for_invalid_toml(monkeypatch):
-    class _InvalidResource:
-        def joinpath(self, _name):
-            return self
-
-        def read_text(self, *, encoding):
-            return 'not = [valid'
-
-    monkeypatch.setattr(types_mod, 'files', lambda _package: _InvalidResource())
-
-    with pytest.raises(AgentSpecLoadError, match='Invalid bundled agent_specs.toml'):
-        types_mod._load_agent_specs()
+    assert specs['codex'].path == '~/.custom-codex/skills'
+    assert specs['codex'].install_mode == 'materialize'
+    assert specs['codex'].parent_env_var is None
 
 
-def test_get_agent_install_mode_defaults_to_symlink():
-    assert get_agent_install_mode('claude') == 'symlink'
-    assert get_agent_install_mode('unknown-agent') == 'symlink'
-
-
-def test_get_agent_install_mode_uses_materialize_for_standard_agents():
-    assert get_agent_install_mode('standard') == 'materialize'
-    assert get_agent_install_mode('openclaw') == 'materialize'
+def test_get_all_agent_specs_rejects_unknown_override():
+    with pytest.raises(ValueError, match="Unknown agent 'unknown-agent' in agents.override"):
+        agents_mod.get_all_agent_specs(GlobalAgentsConfig(override={'unknown-agent': {'path': '~/.unknown/skills'}}))
