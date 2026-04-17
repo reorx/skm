@@ -3,6 +3,7 @@ from pathlib import Path
 
 from ruamel.yaml import YAML, CommentedMap, CommentedSeq
 
+from skm.agents import get_all_agent_specs, get_default_agent_names
 from skm.types import SkillRepoConfig, SkmConfig
 
 _yaml = YAML()
@@ -28,7 +29,10 @@ def load_config(config_path: Path) -> SkmConfig:
     # Cache the raw CommentedMap for round-trip saving
     _raw_cache[config_path.resolve()] = data
 
-    return SkmConfig(**data)
+    config = SkmConfig(**data)
+    agent_specs = get_all_agent_specs(config.agents)
+    get_default_agent_names(config.agents, agent_specs)
+    return config
 
 
 def _to_commented(obj):

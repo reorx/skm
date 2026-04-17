@@ -1,6 +1,6 @@
 import subprocess
-from pathlib import Path
 
+import skm.agents as agents_mod
 import skm.types as types_mod
 from click.testing import CliRunner
 
@@ -43,8 +43,8 @@ def test_install_basic(tmp_path):
 
     # Use tmp dirs as agent targets
     agents = {
-        'claude': str(tmp_path / 'agents' / 'claude' / 'skills'),
-        'codex': str(tmp_path / 'agents' / 'codex' / 'skills'),
+        'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills')),
+        'codex': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'codex' / 'skills')),
     }
 
     config = load_config(config_path)
@@ -73,7 +73,7 @@ def test_install_singleton_skill(tmp_path):
 
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
-    agents = {'claude': str(tmp_path / 'agents' / 'claude' / 'skills')}
+    agents = {'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills'))}
 
     config = load_config(config_path)
     run_install(
@@ -106,8 +106,8 @@ def test_install_removes_skill_dropped_from_config(tmp_path):
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
     agents = {
-        'claude': str(tmp_path / 'agents' / 'claude' / 'skills'),
-        'codex': str(tmp_path / 'agents' / 'codex' / 'skills'),
+        'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills')),
+        'codex': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'codex' / 'skills')),
     }
 
     # First install: both skills
@@ -138,8 +138,8 @@ def test_install_removes_links_for_excluded_agent(tmp_path):
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
     agents = {
-        'claude': str(tmp_path / 'agents' / 'claude' / 'skills'),
-        'codex': str(tmp_path / 'agents' / 'codex' / 'skills'),
+        'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills')),
+        'codex': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'codex' / 'skills')),
     }
 
     # First install: all agents
@@ -177,7 +177,7 @@ def test_install_uses_env_override_path_in_lock(tmp_path, monkeypatch):
 
     monkeypatch.setenv('HOME', str(home))
     monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(claude_config))
-    monkeypatch.setattr('skm.cli.KNOWN_AGENTS', types_mod._get_known_agents())
+    monkeypatch.setattr('skm.cli._resolve_default_agents', lambda config, agents_dir=None: agents_mod.resolve_agent_specs(config.agents))
 
     runner = CliRunner()
     result = runner.invoke(

@@ -11,10 +11,10 @@ from pathlib import Path
 from click.testing import CliRunner
 from ruamel.yaml import YAML
 
+from skm.cli import cli
+
 _yaml = YAML()
 _yaml.default_flow_style = False
-
-from skm.cli import cli
 
 
 def _init_git_repo(path: Path) -> None:
@@ -102,7 +102,7 @@ class TestInstall:
         for agent in ['claude', 'codex', 'pi']:
             link = tmp_path / 'agents' / agent / 'my-skill'
             assert link.is_symlink(), f'Missing symlink for {agent}'
-        # standard and openclaw use hardlinks (directory with hardlinked files)
+        # standard and openclaw use materialized directories backed by hardlinks
         for agent in ['standard', 'openclaw']:
             hardlink = tmp_path / 'agents' / agent / 'my-skill'
             assert hardlink.is_dir() and not hardlink.is_symlink(), f'Missing hardlinked dir for {agent}'
@@ -297,8 +297,6 @@ class TestInstall:
         lock = _load_lock(tmp_path)
         names = {s['name'] for s in lock['skills']}
         assert names == {'old-skill', 'new-skill'}
-
-
 class TestList:
     def test_list_empty(self, tmp_path):
         _write_config(tmp_path, [])
@@ -318,6 +316,27 @@ class TestList:
         assert result.exit_code == 0
         assert 'listed-skill' in result.output
         assert str(repo) in result.output
+
+    def test_list_works_when_config_is_invalid(self, tmp_path):
+        repo = _make_skill_repo(tmp_path, 'repo-invalid-list', [{'name': 'listed-skill'}])
+        config_path = _write_config(tmp_path, [{'repo': str(repo)}])
+
+        runner = CliRunner()
+        install_result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert install_result.exit_code == 0, install_result.output
+
+        config_path.write_text(
+            'agents:\n'
+            '  default:\n'
+            '    - nonexistent\n'
+            'packages:\n'
+            f'  - repo: {repo}\n'
+        )
+
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'list'])
+        assert result.exit_code == 0
+        assert 'warning: failed to load config for agent resolution' in result.output.lower()
+        assert 'listed-skill' in result.output
 
     def test_list_all_shows_unmanaged_skills(self, tmp_path):
         """--all shows all skills in agent dirs, marking unmanaged ones."""
@@ -365,14 +384,14 @@ class TestList:
         # Managed skills should show repo info or a marker
         lines = result.output.splitlines()
         # Find lines with skill names
-        skm_lines = [l for l in lines if 'skm-skill' in l]
-        local_lines = [l for l in lines if 'local-skill' in l]
+        skm_lines = [line for line in lines if 'skm-skill' in line]
+        local_lines = [line for line in lines if 'local-skill' in line]
         assert len(skm_lines) > 0
         assert len(local_lines) > 0
         # Managed skills should have some distinguishing marker (e.g. repo info)
-        assert any('repo-dist' in l or 'skm' in l.lower() for l in skm_lines)
+        assert any('repo-dist' in line for line in skm_lines)
         # Unmanaged should NOT have repo info
-        assert not any('repo-dist' in l for l in local_lines)
+        assert not any('repo-dist' in line for line in local_lines)
 
 
 class TestUpdate:
@@ -402,6 +421,8 @@ class TestUpdate:
         runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
 
         # Make a new commit in the source repo
+        skill_file = repo / 'skills' / 'upd-skill' / 'SKILL.md'
+        skill_file.write_text('---\nname: upd-skill\ndescription: updated\n---\n# upd-skill\n')
         (repo / 'skills' / 'upd-skill' / 'extra.md').write_text('new content')
         subprocess.run(['git', 'add', '.'], cwd=repo, capture_output=True, check=True)
         subprocess.run(['git', 'commit', '-m', 'add extra'], cwd=repo, capture_output=True, check=True)
@@ -411,13 +432,20 @@ class TestUpdate:
         assert 'Updated' in result.output
         assert 'add extra' in result.output
 
+        standard_dir = tmp_path / 'agents' / 'standard' / 'upd-skill'
+        openclaw_dir = tmp_path / 'agents' / 'openclaw' / 'upd-skill'
+        assert (standard_dir / 'SKILL.md').read_text() == skill_file.read_text()
+        assert (openclaw_dir / 'SKILL.md').read_text() == skill_file.read_text()
+        assert (standard_dir / 'extra.md').read_text() == 'new content'
+        assert (openclaw_dir / 'extra.md').read_text() == 'new content'
+
         # Verify lock has new commit
         lock = _load_lock(tmp_path)
         old_commit = lock['skills'][0]['commit']
         # The commit should be 40 hex chars (full SHA)
         assert len(old_commit) == 40
 
-    def test_update_removes_deleted_materialized_files(self, tmp_path):
+    def test_update_warns_for_deleted_materialized_files(self, tmp_path):
         repo = _make_skill_repo(tmp_path, 'repo-upd3', [{'name': 'upd-skill'}])
         tracked_file = repo / 'skills' / 'upd-skill' / 'extra.md'
         tracked_file.write_text('old content')
@@ -427,8 +455,7 @@ class TestUpdate:
         _write_config(tmp_path, [{'repo': str(repo)}])
 
         runner = CliRunner()
-        install_result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
-        assert install_result.exit_code == 0, install_result.output
+        runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
 
         standard_file = tmp_path / 'agents' / 'standard' / 'upd-skill' / 'extra.md'
         openclaw_file = tmp_path / 'agents' / 'openclaw' / 'upd-skill' / 'extra.md'
@@ -442,8 +469,9 @@ class TestUpdate:
         result = runner.invoke(cli, [*_cli_args(tmp_path), 'update', 'upd-skill'])
         assert result.exit_code == 0, result.output
         assert 'remove extra' in result.output
-        assert not standard_file.exists()
-        assert not openclaw_file.exists()
+        assert 'contains stale files that were not removed' in result.output
+        assert standard_file.exists()
+        assert openclaw_file.exists()
 
 
 class TestCheckUpdates:

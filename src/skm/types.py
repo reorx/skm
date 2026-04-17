@@ -1,6 +1,7 @@
-import os
 from pathlib import Path
-from pydantic import BaseModel, field_validator, model_validator
+from typing import Literal
+
+from pydantic import BaseModel, model_validator
 
 
 # --- Config models (parsed from skills.yaml) ---
@@ -42,22 +43,28 @@ class SkillRepoConfig(BaseModel):
         return self.repo
 
 
-class DefaultAgentsConfig(BaseModel):
-    default: list[str] | None = None
+AgentInstallMode = Literal['symlink', 'materialize']
 
-    @field_validator('default')
-    @classmethod
-    def check_known_agents(cls, v: list[str] | None) -> list[str] | None:
-        if v is not None:
-            unknown = [a for a in v if a not in KNOWN_AGENTS]
-            if unknown:
-                raise ValueError(f'Unknown agents: {unknown}. Known agents: {list(KNOWN_AGENTS.keys())}')
-        return v
+
+class AgentSpec(BaseModel):
+    path: str
+    parent_env_var: str | None = None
+    install_mode: AgentInstallMode = 'symlink'
+
+
+class AgentOverride(BaseModel):
+    path: str | None = None
+    install_mode: AgentInstallMode | None = None
+
+
+class GlobalAgentsConfig(BaseModel):
+    default: list[str] | None = None
+    override: dict[str, AgentOverride] | None = None
 
 
 class SkmConfig(BaseModel):
     packages: list[SkillRepoConfig]
-    agents: DefaultAgentsConfig | None = None
+    agents: GlobalAgentsConfig | None = None
 
 
 # --- Lock file models ---
@@ -69,7 +76,7 @@ class InstalledSkill(BaseModel):
     local_path: str | None = None
     commit: str | None = None
     skill_path: str  # relative path within repo to the skill dir
-    linked_to: list[str]  # list of absolute symlink paths
+    linked_to: list[str]  # list of managed install paths
 
 
 class LockFile(BaseModel):
@@ -88,47 +95,6 @@ class DetectedSkill(BaseModel):
 
 
 # --- Constants ---
-
-_KNOWN_AGENTS_DEFAULTS: dict[str, str] = {
-    'standard': '~/.agents/skills',
-    'claude': '~/.claude/skills',
-    'codex': '~/.codex/skills',
-    'openclaw': '~/.openclaw/skills',
-    'pi': '~/.pi/agent/skills',
-}
-
-# Env vars that override per-agent skill directory base.
-# If set, the agent's skill dir becomes $ENV_VAR/skills.
-_AGENT_ENV_OVERRIDES: dict[str, str] = {
-    'claude': 'CLAUDE_CONFIG_DIR',
-    'codex': 'CODEX_HOME',
-}
-
-
-def _get_known_agents() -> dict[str, str]:
-    """Return known agents dict, applying env-var overrides where set."""
-
-    result = dict(_KNOWN_AGENTS_DEFAULTS)
-    for agent, env_var in _AGENT_ENV_OVERRIDES.items():
-        val = os.environ.get(env_var)
-        if val:
-            result[agent] = str(Path(val).expanduser() / 'skills')
-    return result
-
-
-KNOWN_AGENTS: dict[str, str] = _get_known_agents()
-
-# Per-agent install options. Agents not listed here use defaults (symlink).
-# Options:
-#   use_hardlink: bool - use hard links instead of symlinks for skill installation
-AGENT_OPTIONS: dict[str, dict] = {
-    'standard': {
-        'use_hardlink': True,
-    },
-    'openclaw': {
-        'use_hardlink': True,
-    },
-}
 
 CONFIG_DIR = Path('~/.config/skm').expanduser()
 CONFIG_PATH = CONFIG_DIR / 'skills.yaml'

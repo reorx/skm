@@ -174,5 +174,9 @@ def test_clone_file_real_dst_must_not_exist(tmp_path):
             clone_file(src, dst)
     else:
         # Linux FICLONE opens dst with 'wb' (truncates), so this succeeds
-        clone_file(src, dst)
+        try:
+            clone_file(src, dst)
+        except OSError as exc:
+            assert is_reflink_unsupported(exc), f'unexpected OSError: {exc}'
+            return
         assert dst.read_text() == 'hello'

@@ -5,20 +5,21 @@ import pytest
 
 import skm.linker as linker
 from skm.linker import resolve_target_agents, link_skill, unlink_skill
+from skm.types import AgentSpec
 
 
 def test_resolve_target_agents_all(tmp_path):
     """No includes/excludes → all agents."""
-    agents = {'claude': str(tmp_path / 'claude'), 'codex': str(tmp_path / 'codex')}
+    agents = {'claude': AgentSpec(path=str(tmp_path / 'claude')), 'codex': AgentSpec(path=str(tmp_path / 'codex'))}
     result = resolve_target_agents(None, agents)
     assert set(result.keys()) == {'claude', 'codex'}
 
 
 def test_resolve_target_agents_excludes(tmp_path):
     agents = {
-        'claude': str(tmp_path / 'claude'),
-        'codex': str(tmp_path / 'codex'),
-        'openclaw': str(tmp_path / 'openclaw'),
+        'claude': AgentSpec(path=str(tmp_path / 'claude')),
+        'codex': AgentSpec(path=str(tmp_path / 'codex')),
+        'openclaw': AgentSpec(path=str(tmp_path / 'openclaw')),
     }
     from skm.types import AgentsConfig
 
@@ -30,15 +31,39 @@ def test_resolve_target_agents_excludes(tmp_path):
 
 def test_resolve_target_agents_includes(tmp_path):
     agents = {
-        'claude': str(tmp_path / 'claude'),
-        'codex': str(tmp_path / 'codex'),
-        'openclaw': str(tmp_path / 'openclaw'),
+        'claude': AgentSpec(path=str(tmp_path / 'claude')),
+        'codex': AgentSpec(path=str(tmp_path / 'codex')),
+        'openclaw': AgentSpec(path=str(tmp_path / 'openclaw')),
     }
     from skm.types import AgentsConfig
 
     cfg = AgentsConfig(includes=['claude'])
     result = resolve_target_agents(cfg, agents)
     assert set(result.keys()) == {'claude'}
+
+
+def test_resolve_target_agents_includes_unknown_returns_empty(tmp_path):
+    agents = {
+        'claude': AgentSpec(path=str(tmp_path / 'claude')),
+        'codex': AgentSpec(path=str(tmp_path / 'codex')),
+    }
+    from skm.types import AgentsConfig
+
+    cfg = AgentsConfig(includes=['unknown'])
+    result = resolve_target_agents(cfg, agents)
+    assert result == {}
+
+
+def test_resolve_target_agents_excludes_unknown_is_noop(tmp_path):
+    agents = {
+        'claude': AgentSpec(path=str(tmp_path / 'claude')),
+        'codex': AgentSpec(path=str(tmp_path / 'codex')),
+    }
+    from skm.types import AgentsConfig
+
+    cfg = AgentsConfig(excludes=['unknown'])
+    result = resolve_target_agents(cfg, agents)
+    assert set(result.keys()) == {'claude', 'codex'}
 
 
 def test_link_skill(tmp_path):
@@ -50,7 +75,7 @@ def test_link_skill(tmp_path):
     agent_dir = tmp_path / 'agent' / 'skills'
     agent_dir.mkdir(parents=True)
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir))
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir)))
     assert linked.is_symlink()
     assert linked.resolve() == skill_src.resolve()
     assert linked.name == 'my-skill'
@@ -64,8 +89,8 @@ def test_link_skill_already_linked(tmp_path):
     agent_dir = tmp_path / 'agent' / 'skills'
     agent_dir.mkdir(parents=True)
 
-    link_skill(skill_src, 'my-skill', str(agent_dir))
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir))
+    link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir)))
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir)))
     assert linked.is_symlink()
     assert status == 'exists'
 
@@ -81,7 +106,7 @@ def test_link_skill_existing_dir_raises(tmp_path):
     (agent_dir / 'my-skill' / 'some-file.md').write_text('hello')
 
     with pytest.raises(FileExistsError):
-        link_skill(skill_src, 'my-skill', str(agent_dir))
+        link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir)))
 
 
 def test_link_skill_force_overrides_dir(tmp_path):
@@ -94,7 +119,7 @@ def test_link_skill_force_overrides_dir(tmp_path):
     (agent_dir / 'my-skill').mkdir()
     (agent_dir / 'my-skill' / 'some-file.md').write_text('hello')
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), force=True)
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir)), force=True)
     assert linked.is_symlink()
     assert linked.resolve() == skill_src.resolve()
     assert status == 'new'
@@ -109,7 +134,7 @@ def test_link_skill_force_overrides_file(tmp_path):
     # Create a regular file at the target
     (agent_dir / 'my-skill').write_text('not a symlink')
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), force=True)
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir)), force=True)
     assert linked.is_symlink()
     assert linked.resolve() == skill_src.resolve()
     assert status == 'new'
@@ -124,8 +149,8 @@ def test_link_skill_different_source_replaces(tmp_path):
     agent_dir = tmp_path / 'agent' / 'skills'
     agent_dir.mkdir(parents=True)
 
-    link_skill(skill_src_1, 'my-skill', str(agent_dir))
-    linked, status = link_skill(skill_src_2, 'my-skill', str(agent_dir))
+    link_skill(skill_src_1, 'my-skill', AgentSpec(path=str(agent_dir)))
+    linked, status = link_skill(skill_src_2, 'my-skill', AgentSpec(path=str(agent_dir)))
     assert linked.is_symlink()
     assert linked.resolve() == skill_src_2.resolve()
     assert status == 'replaced'
@@ -144,7 +169,7 @@ def test_link_skill_hardlink_mode_falls_back_to_reflink(monkeypatch, tmp_path):
     monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
     monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir), install_mode='materialize'))
 
     cloned_file = linked / 'SKILL.md'
     assert linked.is_dir() and not linked.is_symlink()
@@ -157,7 +182,8 @@ def test_link_skill_reuses_existing_materialized_copy(monkeypatch, tmp_path):
     """Hardlink mode accepts an existing managed reflink-style copy on reinstall."""
     skill_src = tmp_path / 'store' / 'my-skill'
     skill_src.mkdir(parents=True)
-    (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
+    skill_file = skill_src / 'SKILL.md'
+    skill_file.write_text('---\nname: my-skill\ndescription: before\n---\n')
 
     agent_dir = tmp_path / 'agent' / 'skills'
     agent_dir.mkdir(parents=True)
@@ -165,12 +191,40 @@ def test_link_skill_reuses_existing_materialized_copy(monkeypatch, tmp_path):
     monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
     monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
 
-    link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    skill_file.write_text('---\nname: my-skill\ndescription: after\n---\n')
+    link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir), install_mode='materialize'))
+    skill_file.write_text('---\nname: my-skill\ndescription: after\n---\n')
     (skill_src / 'extra.md').write_text('new content')
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir), install_mode='materialize'))
     assert linked.is_dir() and not linked.is_symlink()
     assert status == 'exists'
+    assert (linked / 'SKILL.md').read_text() == skill_file.read_text()
     assert (linked / 'extra.md').read_text() == 'new content'
+
+
+def test_link_skill_materialized_copy_warns_about_stale_files(monkeypatch, tmp_path, capsys):
+    """Reinstalling a managed materialized copy should warn about stale files without removing them."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
+    stale_source = skill_src / 'stale.md'
+    stale_source.write_text('old content')
+
+    agent_dir = tmp_path / 'agent' / 'skills'
+    agent_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
+    monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
+
+    link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir), install_mode='materialize'))
+    stale_source.unlink()
+
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir), install_mode='materialize'))
+
+    assert linked.is_dir() and not linked.is_symlink()
+    assert status == 'exists'
+    assert (linked / 'stale.md').exists()
+    assert 'contains stale files that were not removed' in capsys.readouterr().out
 
 
 def test_link_skill_reflink_mode_falls_back_to_copy(monkeypatch, tmp_path):
@@ -190,7 +244,7 @@ def test_link_skill_reflink_mode_falls_back_to_copy(monkeypatch, tmp_path):
 
     monkeypatch.setattr(linker, '_clone_file_reflink', _raise_unsupported)
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    linked, status = link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir), install_mode='materialize'))
 
     copied_file = linked / 'SKILL.md'
     assert linked.is_dir() and not linked.is_symlink()
@@ -216,7 +270,34 @@ def test_link_skill_reflink_mode_preserves_unhandled_oserror(monkeypatch, tmp_pa
     monkeypatch.setattr(linker, '_clone_file_reflink', _raise_unexpected)
 
     with pytest.raises(OSError, match='disk error'):
-        link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+        link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir), install_mode='materialize'))
+
+
+def test_link_skill_materialized_force_overrides_file(monkeypatch, tmp_path):
+    """force=True should replace an existing plain file with a materialized copy."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    source_file = skill_src / 'SKILL.md'
+    source_file.write_text('---\nname: my-skill\n---\n')
+
+    agent_dir = tmp_path / 'agent' / 'skills'
+    agent_dir.mkdir(parents=True)
+    (agent_dir / 'my-skill').write_text('plain file')
+
+    monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
+    monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
+
+    linked, status = link_skill(
+        skill_src,
+        'my-skill',
+        AgentSpec(path=str(agent_dir), install_mode='materialize'),
+        force=True,
+    )
+
+    copied_file = linked / 'SKILL.md'
+    assert linked.is_dir() and not linked.is_symlink()
+    assert status == 'replaced'
+    assert copied_file.read_text() == source_file.read_text()
 
 
 def test_select_materialization_mode_uses_reflink_across_devices(monkeypatch, tmp_path):
@@ -272,7 +353,7 @@ def test_unlink_skill(tmp_path):
     agent_dir = tmp_path / 'agent' / 'skills'
     agent_dir.mkdir(parents=True)
 
-    link_skill(skill_src, 'my-skill', str(agent_dir))
+    link_skill(skill_src, 'my-skill', AgentSpec(path=str(agent_dir)))
     target = agent_dir / 'my-skill'
     assert target.is_symlink()
 

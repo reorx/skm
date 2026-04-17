@@ -1,6 +1,6 @@
 # SKM - Skill Manager
 
-A CLI tool that manages **global** AI agent skills from GitHub repos or local directories. Clone repos or link local paths, detect skills via `SKILL.md`, and symlink them into agent directories — all driven by a single YAML config.
+A CLI tool that manages **global** AI agent skills from GitHub repos or local directories. Clone repos or link local paths, detect skills via `SKILL.md`, and install them into agent directories — all driven by a single YAML config.
 
 > **Note:** skm manages skills at the user level (e.g. `~/.claude/skills/`), not at the project level. It is not intended for installing skills into project-scoped directories.
 
@@ -39,6 +39,7 @@ skm install
 ```
 
 Skills are cloned (or symlinked from local paths) into your agent directories (`~/.claude/skills/`, `~/.codex/skills/`, etc.).
+Most agents use symlinks; `standard` and `openclaw` use materialized installs.
 
 ### Install from a source directly
 
@@ -64,7 +65,7 @@ This detects available skills, lets you pick which ones to install (unless a spe
 
 | Command | Description |
 |---|---|
-| `skm install` (or `skm i`) | Install all packages from config. Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent — also removes stale links (see below). |
+| `skm install` (or `skm i`) | Install all packages from config. Clone repos (or link local paths), detect skills, install to agents, write lock file. Idempotent — also removes stale links (see below). |
 | `skm install <source> [skill]` (or `skm i`) | Install directly from a repo URL or local path without editing config. Interactively select skills and agents, then auto-update config. |
 | `skm list` | Show installed skills and their linked paths. |
 | `skm list --all` | Show all skills across all agent directories, marking which are managed by skm. |
@@ -82,6 +83,9 @@ agents:
   default:                   # optional: select which agents are active (omit = all)
     - claude
     - standard
+  override:                  # optional: override built-in agent path or install mode
+    codex:
+      path: ~/.custom-codex/skills
 
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
@@ -121,7 +125,7 @@ A skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name
 
 ## Known Agents
 
-Skills are symlinked into these directories by default:
+Skills are installed into these directories by default:
 
 | Agent | Path |
 |---|---|
@@ -129,22 +133,25 @@ Skills are symlinked into these directories by default:
 | `claude` | `~/.claude/skills/` |
 | `codex` | `~/.codex/skills/` |
 | `openclaw` | `~/.openclaw/skills/` |
+| `pi` | `~/.pi/agent/skills/` |
+
+`standard` and `openclaw` use materialized installs instead of symlinks. These built-in defaults are defined in code.
 
 ## Copy Strategy
 
-When skm links a skill into an agent directory, it picks a strategy based on the agent config and filesystem:
+When skm installs a skill into an agent directory, it picks a strategy based on the agent spec and filesystem:
 
 ### 1. Symlink (default)
 
 A symbolic link from `<agent_dir>/skills/<skill_name>` → `<store>/<skill_name>`. This is the default for all agents. Changes in the store are immediately visible.
 
-### 2. Hardlink
+### 2. Materialize
 
-When `use_hardlink: true` is set for an agent in `AGENT_OPTIONS`, skm creates hardlinks instead. Each file in the skill directory gets its own hardlink pointing to the same inode as the source. This only works when source and target are on the **same filesystem/device**.
+When an agent uses `install_mode: materialize`, skm creates a real directory instead of a symlink. On the same filesystem/device it uses hardlinks, so each file in the installed skill directory points to the same inode as the source.
 
 ### 3. Reflink (copy-on-write)
 
-When hardlinks can't be used (source and target on **different devices**), skm attempts a reflink/COW clone. This creates an independent copy that shares physical disk blocks with the source until either side is modified — fast and space-efficient.
+When a materialized install cannot use hardlinks because source and target are on **different devices**, skm attempts a reflink/COW clone. This creates an independent copy that shares physical disk blocks with the source until either side is modified — fast and space-efficient.
 
 The reflink backend is platform-specific:
 
@@ -155,14 +162,14 @@ The reflink backend is platform-specific:
 
 ### 4. Plain copy (fallback)
 
-If reflink is not available (unsupported filesystem, non-Unix platform, etc.), skm falls back to a plain `shutil.copy2` — a full byte copy with metadata preserved.
+If reflink is not available for a materialized install (unsupported filesystem, non-Unix platform, etc.), skm falls back to a plain `shutil.copy2` — a full byte copy with metadata preserved.
 
 ### Selection flow
 
 ```
-use_hardlink enabled?
-├── No  → symlink
-└── Yes → same device?
+install_mode == symlink?
+├── Yes → symlink
+└── No  → same device?
     ├── Yes → hardlink
     └── No  → reflink supported?
         ├── Yes → reflink (COW clone)

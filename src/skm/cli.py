@@ -2,6 +2,18 @@ from pathlib import Path
 
 import click
 
+from skm.agents import get_all_agent_specs, resolve_agent_specs
+from skm.config import load_config, save_config, upsert_package
+from skm.tui import interactive_multi_select
+from skm.types import (
+    CONFIG_PATH,
+    LOCK_PATH,
+    STORE_DIR,
+    AgentsConfig,
+    SkillRepoConfig,
+    SkmConfig,
+)
+
 
 class AliasGroup(click.Group):
     """A Click group that supports hidden command aliases."""
@@ -17,18 +29,6 @@ class AliasGroup(click.Group):
         cmd_name = self._aliases.get(cmd_name, cmd_name)
         return super().get_command(ctx, cmd_name)
 
-from skm.config import load_config, save_config, upsert_package
-from skm.tui import interactive_multi_select
-from skm.types import (
-    CONFIG_PATH,
-    LOCK_PATH,
-    STORE_DIR,
-    KNOWN_AGENTS,
-    AgentsConfig,
-    SkillRepoConfig,
-    SkmConfig,
-)
-
 
 @click.group(cls=AliasGroup)
 @click.option('--config', 'config_path', type=click.Path(), default=None, help='Path to skills.yaml config file.')
@@ -39,7 +39,7 @@ from skm.types import (
     'agents_dir',
     type=click.Path(),
     default=None,
-    help='Base directory for agent skill symlinks (overrides all known agents).',
+    help='Base directory for agent skill installs (overrides all known agents).',
 )
 @click.pass_context
 def cli(ctx, config_path, store_dir, lock_path, agents_dir):
@@ -51,14 +51,29 @@ def cli(ctx, config_path, store_dir, lock_path, agents_dir):
     ctx.obj['agents_dir'] = agents_dir
 
 
-def _expand_agents(agents_dir: str | None = None, default_agents: list[str] | None = None) -> dict[str, str]:
-    agents = KNOWN_AGENTS
-    if default_agents is not None:
-        agents = {k: v for k, v in agents.items() if k in default_agents}
-    if agents_dir:
-        base = Path(agents_dir)
-        return {name: str(base / name) for name in agents}
-    return {name: str(Path(path).expanduser()) for name, path in agents.items()}
+def _resolve_default_agents(config: SkmConfig, agents_dir: str | None = None):
+    return resolve_agent_specs(config.agents, agents_dir=agents_dir)
+
+
+def _resolve_all_agents(config: SkmConfig, agents_dir: str | None = None):
+    all_specs = get_all_agent_specs(config.agents)
+    return resolve_agent_specs(config.agents, agents_dir=agents_dir, selected_names=list(all_specs.keys()))
+
+
+def _resolve_list_agents(config_path: Path, agents_dir: str | None = None):
+    if not config_path.exists():
+        return resolve_agent_specs(None, agents_dir=agents_dir)
+    try:
+        config = load_config(config_path)
+    except Exception as exc:
+        click.echo(
+            click.style(
+                f'Warning: failed to load config for agent resolution; falling back to built-in agents: {exc}',
+                fg='yellow',
+            )
+        )
+        return resolve_agent_specs(None, agents_dir=agents_dir)
+    return _resolve_all_agents(config, agents_dir)
 
 
 @cli.command()
@@ -85,8 +100,7 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
     if source is None:
         # Existing behavior: install from config
         config = load_config(ctx.obj['config_path'])
-        default_agents = config.agents.default if config.agents else None
-        agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
+        agents = _resolve_default_agents(config, ctx.obj['agents_dir'])
         run_install(
             config=config,
             lock_path=ctx.obj['lock_path'],
@@ -119,6 +133,7 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
         config = load_config(config_path)
     else:
         config = SkmConfig(packages=[])
+    default_agents = _resolve_default_agents(config, ctx.obj['agents_dir'])
 
     # Check if existing package with skills: None and specific skill_name
     if skill_name:
@@ -136,13 +151,11 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
                 return
             else:
                 # Re-install just this package to pick up new skills
-                default_agents = config.agents.default if config.agents else None
-                agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
                 run_install_package(
                     repo_config=existing_pkg,
                     lock_path=ctx.obj['lock_path'],
                     store_dir=ctx.obj['store_dir'],
-                    known_agents=agents,
+                    known_agents=default_agents,
                     force=force,
                     verbose=verbose,
                 )
@@ -191,11 +204,10 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
         # Repo already in config, keep existing agents setting
         agents_config = existing_pkg.agents
     else:
-        agent_names = list(KNOWN_AGENTS.keys())
+        agent_names = list(default_agents.keys())
         # Pre-select based on config default
-        default_agents_list = config.agents.default if config.agents else None
-        if default_agents_list:
-            preselected = {i for i, name in enumerate(agent_names) if name in default_agents_list}
+        if config.agents and config.agents.default:
+            preselected = set(range(len(agent_names)))
         else:
             preselected = None  # all selected
 
@@ -205,7 +217,7 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
             return
 
         selected_agent_names = [agent_names[i] for i in agent_indices]
-        if set(selected_agent_names) == set(agent_names):
+        if set(selected_agent_names) == set(default_agents):
             agents_config = None  # all agents = no filter needed
         else:
             agents_config = AgentsConfig(includes=selected_agent_names)
@@ -234,13 +246,11 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
     pkg_to_install = _find_package_by_source(config, new_pkg.source_key, is_local) or new_pkg
 
     # Install just this package
-    default_agents = config.agents.default if config.agents else None
-    agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
     run_install_package(
         repo_config=pkg_to_install,
         lock_path=ctx.obj['lock_path'],
         store_dir=ctx.obj['store_dir'],
-        known_agents=agents,
+        known_agents=default_agents,
         force=force,
         verbose=verbose,
     )
@@ -305,8 +315,7 @@ def update(ctx, skill_names: tuple[str, ...], update_all: bool):
         raise click.UsageError("Provide skill name(s) or use --all.")
 
     config = load_config(ctx.obj['config_path'])
-    default_agents = config.agents.default if config.agents else None
-    agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
+    agents = _resolve_default_agents(config, ctx.obj['agents_dir'])
     run_update(
         skill_names=skill_names,
         update_all=update_all,
@@ -390,10 +399,8 @@ def list_skills(ctx, skill_name: str | None, show_all: bool, verbose: bool):
     """List installed skills and their linked paths."""
     from skm.commands.list_cmd import run_list, run_list_all
 
+    agents = _resolve_list_agents(ctx.obj['config_path'], ctx.obj['agents_dir'])
     if show_all:
-        config = load_config(ctx.obj['config_path'])
-        default_agents = config.agents.default if config.agents else None
-        agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
         run_list_all(ctx.obj['lock_path'], agents)
     else:
-        run_list(ctx.obj['lock_path'], verbose=verbose, skill_name=skill_name)
+        run_list(ctx.obj['lock_path'], agents, verbose=verbose, skill_name=skill_name)

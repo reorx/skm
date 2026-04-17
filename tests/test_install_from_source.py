@@ -265,6 +265,48 @@ class TestInstallWithAgentsFlags:
         assert result.exit_code != 0
         assert 'Cannot specify both' in result.output
 
+    def test_agents_includes_unknown_agent_continues_silently(self, tmp_path):
+        """Unknown agent in --agents-includes should keep old silent filter behavior."""
+        repo = _make_skill_repo(tmp_path, 'my-skills', [{'name': 'skill-a'}])
+        _write_config(tmp_path, [], agents={'default': ['claude']})
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                *_cli_args(tmp_path),
+                'install',
+                str(repo),
+                'skill-a',
+                '--agents-includes',
+                'codex',
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert 'unknown agents ignored' not in result.output.lower()
+
+    def test_agents_excludes_unknown_agent_continues_silently(self, tmp_path):
+        """Unknown agent in --agents-excludes should keep old silent filter behavior."""
+        repo = _make_skill_repo(tmp_path, 'my-skills', [{'name': 'skill-a'}])
+        _write_config(tmp_path, [], agents={'default': ['claude']})
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                *_cli_args(tmp_path),
+                'install',
+                str(repo),
+                'skill-a',
+                '--agents-excludes',
+                'codex',
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert 'unknown agents ignored' not in result.output.lower()
+
 
 class TestInstallUpsertConfig:
     """Scenario: existing package in config gets updated."""
@@ -398,6 +440,34 @@ class TestConfigAutoCreation:
         config = _load_config(tmp_path)
         assert 'packages' in config
         assert len(config['packages']) == 1
+
+    def test_agent_prompt_is_limited_to_default_agents(self, tmp_path):
+        """Interactive agent selection should only show default agents."""
+        repo = _make_skill_repo(tmp_path, 'my-skills', [{'name': 'skill-a'}])
+        _write_config(tmp_path, [], agents={'default': ['claude']})
+
+        calls = []
+
+        def _select(options, **kwargs):
+            calls.append((options, kwargs))
+            if len(calls) == 1:
+                return [0]
+            return [0]
+
+        with patch('skm.cli.interactive_multi_select', side_effect=_select):
+            runner = CliRunner()
+            result = runner.invoke(cli, [*_cli_args(tmp_path), 'install', str(repo)])
+
+        assert result.exit_code == 0, result.output
+
+        assert calls[1][0] == ['claude']
+
+        config = _load_config(tmp_path)
+        pkg = config['packages'][0]
+        assert 'agents' not in pkg
+
+        assert (tmp_path / 'agents' / 'claude' / 'skill-a').exists()
+        assert not (tmp_path / 'agents' / 'codex' / 'skill-a').exists()
 
 
 class TestInstallWithoutSource:

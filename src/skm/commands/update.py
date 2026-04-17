@@ -7,7 +7,7 @@ from skm.detect import detect_skills
 from skm.git import clone_or_pull, get_head_commit, get_log_between, repo_url_to_dirname
 from skm.linker import link_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
-from skm.types import InstalledSkill, SkmConfig
+from skm.types import AgentSpec, InstalledSkill, SkmConfig
 from skm.utils import compact_path
 
 
@@ -17,7 +17,7 @@ def run_update(
     config: SkmConfig,
     lock_path: Path,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, AgentSpec],
 ) -> None:
     lock = load_lock(lock_path)
 
@@ -61,7 +61,7 @@ def _update_repo(
     config: SkmConfig,
     lock,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, AgentSpec],
 ) -> None:
     repo_dir_name = repo_url_to_dirname(repo_url)
     repo_path = store_dir / repo_dir_name
@@ -128,7 +128,7 @@ def _update_repo(
         skill = matching[0]
         linked_paths = []
         for agent_name, agent_dir in target_agents.items():
-            link, _status = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
+            link, _status = link_skill(skill.path, skill.name, agent_dir, force=True)
             linked_paths.append(compact_path(str(link)))
 
         lock.skills[i] = InstalledSkill(
