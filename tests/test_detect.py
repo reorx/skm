@@ -80,6 +80,36 @@ def test_detect_skills_skips_git_dir(tmp_path):
     assert skills[0].name == 'real-skill'
 
 
+def test_detect_skills_in_explicit_skills_dir(tmp_path):
+    """Explicit skills_dir limits discovery to that directory."""
+    _write_skill_md(tmp_path / 'skills' / 'ignored', 'ignored')
+    _write_skill_md(tmp_path / 'certain' / 'relative' / 'path' / 'skill-a', 'skill-a')
+    _write_skill_md(tmp_path / 'certain' / 'relative' / 'path' / 'nested' / 'skill-b', 'skill-b')
+
+    skills = detect_skills(tmp_path, skills_dir='certain/relative/path')
+    names = {s.name for s in skills}
+    assert names == {'skill-a', 'skill-b'}
+    assert {s.relative_path for s in skills} == {
+        'certain/relative/path/skill-a',
+        'certain/relative/path/nested/skill-b',
+    }
+
+
+def test_detect_explicit_skills_dir_can_be_singleton(tmp_path):
+    """skills_dir may point directly at one skill directory."""
+    _write_skill_md(tmp_path / 'packages' / 'one-skill', 'one-skill')
+
+    skills = detect_skills(tmp_path, skills_dir='packages/one-skill')
+    assert len(skills) == 1
+    assert skills[0].name == 'one-skill'
+    assert skills[0].relative_path == 'packages/one-skill'
+
+
+def test_detect_missing_explicit_skills_dir_raises(tmp_path):
+    with pytest.raises(ValueError, match='skills_dir does not exist'):
+        detect_skills(tmp_path, skills_dir='missing')
+
+
 def test_parse_skill_name_strips_quotes(tmp_path):
     """Quoted name values in frontmatter should have quotes stripped."""
     from skm.detect import parse_skill_name

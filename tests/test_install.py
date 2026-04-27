@@ -63,6 +63,46 @@ def test_install_basic(tmp_path):
     assert lock_path.exists()
 
 
+def test_install_with_skills_dir_limits_detection(tmp_path):
+    """Install only skills below a package's explicit skills_dir."""
+    repo = tmp_path / 'repo-skills-dir'
+    repo.mkdir()
+    subprocess.run(['git', 'init'], cwd=repo, capture_output=True)
+    subprocess.run(['git', 'config', 'user.email', 't@t.com'], cwd=repo, capture_output=True)
+    subprocess.run(['git', 'config', 'user.name', 'T'], cwd=repo, capture_output=True)
+
+    wanted = repo / 'certain' / 'relative' / 'path' / 'wanted'
+    wanted.mkdir(parents=True)
+    (wanted / 'SKILL.md').write_text('---\nname: wanted\ndescription: test\n---\nContent\n')
+
+    ignored = repo / 'skills' / 'ignored'
+    ignored.mkdir(parents=True)
+    (ignored / 'SKILL.md').write_text('---\nname: ignored\ndescription: test\n---\nContent\n')
+
+    subprocess.run(['git', 'add', '.'], cwd=repo, capture_output=True)
+    subprocess.run(['git', 'commit', '-m', 'init'], cwd=repo, capture_output=True)
+
+    config_path = tmp_path / 'config' / 'skills.yaml'
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        f'packages:\n  - repo: {repo}\n    skills_dir: certain/relative/path\n'
+    )
+
+    lock_path = tmp_path / 'config' / 'skills-lock.yaml'
+    store_dir = tmp_path / 'store'
+    agents = {'claude': str(tmp_path / 'agents' / 'claude' / 'skills')}
+
+    config = load_config(config_path)
+    run_install(config=config, lock_path=lock_path, store_dir=store_dir, known_agents=agents)
+
+    assert (tmp_path / 'agents' / 'claude' / 'skills' / 'wanted').is_symlink()
+    assert not (tmp_path / 'agents' / 'claude' / 'skills' / 'ignored').exists()
+
+    lock = load_lock(lock_path)
+    assert [s.name for s in lock.skills] == ['wanted']
+    assert lock.skills[0].skill_path == 'certain/relative/path/wanted'
+
+
 def test_install_singleton_skill(tmp_path):
     """Install a singleton skill (SKILL.md at repo root)."""
     repo = _make_skill_repo(tmp_path, 'singleton', skills_subdir=False)

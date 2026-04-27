@@ -18,6 +18,24 @@ def test_skill_repo_config_with_skills():
     assert cfg.skills == ["react-best-practices", "react-native-skills"]
 
 
+def test_skill_repo_config_with_skills_dir():
+    cfg = SkillRepoConfig(
+        repo="https://github.com/example/repo",
+        skills_dir="certain/relative/path",
+    )
+    assert cfg.skills_dir == "certain/relative/path"
+
+
+def test_skill_repo_config_rejects_absolute_skills_dir():
+    with pytest.raises(ValueError):
+        SkillRepoConfig(repo="https://github.com/example/repo", skills_dir="/tmp/skills")
+
+
+def test_skill_repo_config_rejects_parent_traversal_skills_dir():
+    with pytest.raises(ValueError):
+        SkillRepoConfig(repo="https://github.com/example/repo", skills_dir="../skills")
+
+
 def test_agents_config_excludes():
     agents = AgentsConfig(excludes=["openclaw"])
     assert agents.excludes == ["openclaw"]

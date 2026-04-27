@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from pydantic import BaseModel, field_validator, model_validator
 
 
@@ -20,6 +20,7 @@ class AgentsConfig(BaseModel):
 class SkillRepoConfig(BaseModel):
     repo: str | None = None
     local_path: str | None = None
+    skills_dir: str | None = None
     skills: list[str] | None = None
     agents: AgentsConfig | None = None
 
@@ -30,6 +31,18 @@ class SkillRepoConfig(BaseModel):
         if not self.repo and not self.local_path:
             raise ValueError("Must specify exactly one of 'repo' or 'local_path'")
         return self
+
+    @field_validator('skills_dir')
+    @classmethod
+    def check_skills_dir(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not v.strip():
+            raise ValueError("'skills_dir' cannot be empty")
+        path = PurePosixPath(v)
+        if path.is_absolute() or '..' in path.parts:
+            raise ValueError("'skills_dir' must be a relative path within the package")
+        return v.rstrip('/')
 
     @property
     def is_local(self) -> bool:

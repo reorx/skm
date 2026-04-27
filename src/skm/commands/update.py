@@ -89,8 +89,6 @@ def _update_repo(
         for line in log.splitlines():
             click.echo(click.style(f'    {line}', dim=True))
 
-    # Re-detect and re-link
-    detected = detect_skills(repo_path)
     repo_config = None
     for c in config.packages:
         if c.repo == repo_url:
@@ -100,6 +98,12 @@ def _update_repo(
     if repo_config is None:
         click.echo(f"  Error: repo '{repo_url}' not found in config. Cannot determine target agents.")
         raise SystemExit(1)
+
+    # Re-detect and re-link
+    try:
+        detected = detect_skills(repo_path, repo_config.skills_dir)
+    except ValueError as e:
+        raise click.ClickException(str(e))
 
     target_agents = resolve_target_agents(
         repo_config.agents,

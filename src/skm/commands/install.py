@@ -179,7 +179,10 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
     if verbose:
         click.echo(click.style(f'Using local path {source_label}', fg='blue', bold=True))
 
-    detected = detect_skills(local_path)
+    try:
+        detected = detect_skills(local_path, repo_config.skills_dir)
+    except ValueError as e:
+        raise click.ClickException(str(e))
     if verbose:
         click.echo(click.style(f'  Found skills: {", ".join(s.name for s in detected) or "(none)"}', dim=True))
 
@@ -271,7 +274,10 @@ def _install_repo(
         clone_or_pull(repo_config.repo, repo_path)
 
     commit = get_head_commit(repo_path)
-    detected = detect_skills(repo_path)
+    try:
+        detected = detect_skills(repo_path, repo_config.skills_dir)
+    except ValueError as e:
+        raise click.ClickException(str(e))
     if verbose:
         click.echo(click.style(f'  Found skills: {", ".join(s.name for s in detected) or "(none)"}', dim=True))
 
@@ -289,7 +295,10 @@ def _install_repo(
                 click.echo(click.style(f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...', fg='blue'))
             clone_or_pull(repo_config.repo, repo_path)
             commit = get_head_commit(repo_path)
-            detected = detect_skills(repo_path)
+            try:
+                detected = detect_skills(repo_path, repo_config.skills_dir)
+            except ValueError as e:
+                raise click.ClickException(str(e))
             if verbose:
                 click.echo(click.style(f'  Found skills after pull: {", ".join(s.name for s in detected) or "(none)"}', dim=True))
             skills_to_install = [s for s in detected if s.name in requested]

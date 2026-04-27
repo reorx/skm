@@ -16,8 +16,20 @@ def parse_skill_name(skill_md_path: Path) -> str:
     raise ValueError(f"No 'name' field in frontmatter of {skill_md_path}")
 
 
-def detect_skills(repo_path: Path) -> list[DetectedSkill]:
+def detect_skills(repo_path: Path, skills_dir: str | None = None) -> list[DetectedSkill]:
     """Detect skills in a cloned repo by walking for SKILL.md files."""
+    if skills_dir is not None:
+        walk_root = repo_path / skills_dir
+        if not walk_root.is_dir():
+            raise ValueError(f"skills_dir does not exist or is not a directory: {skills_dir}")
+
+        root_skill = walk_root / 'SKILL.md'
+        if root_skill.exists():
+            name = parse_skill_name(root_skill)
+            return [DetectedSkill(name=name, path=walk_root, relative_path=str(walk_root.relative_to(repo_path)))]
+
+        return _walk_for_skills(walk_root, repo_path)
+
     # Case 1: Root has SKILL.md → singleton skill
     root_skill = repo_path / 'SKILL.md'
     if root_skill.exists():

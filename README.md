@@ -85,6 +85,7 @@ agents:
 
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
+    skills_dir: skills/.curated   # optional: search only this repo-relative directory
     skills:                  # optional: install only these skills (omit = all)
       - vercel-react-best-practices
     agents:                  # optional: further filter agents for this package
@@ -99,6 +100,8 @@ packages:
 ```
 
 Each package must specify exactly one of `repo` or `local_path`. Local path packages use the directory directly (no cloning) and are skipped by `check-updates` and `update`.
+
+`skills_dir` is optional and must be a relative path inside the package. When set, skm searches only that directory for `SKILL.md` files instead of using the default detection order.
 
 ## Install Sync Behavior
 
@@ -118,6 +121,8 @@ A skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name
 2. `./skills/` subdirectory exists — scan its children
 3. Otherwise — walk all subdirectories from repo root
 4. Stop descending once `SKILL.md` is found (no nested skills)
+
+If a package sets `skills_dir`, this default order is bypassed and only that directory is scanned. If `skills_dir` itself contains `SKILL.md`, it is treated as a singleton skill.
 
 ## Known Agents
 
