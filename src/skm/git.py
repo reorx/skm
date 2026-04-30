@@ -44,14 +44,18 @@ def _validate_sha(sha: str) -> None:
         raise ValueError(f"Invalid commit SHA: {sha!r}")
 
 
-def clone_or_pull(repo_url: str, dest: Path) -> None:
+def clone_or_pull(repo_url: str, dest: Path, clone_strategy: str | None = None) -> None:
     """Clone repo if not present, otherwise pull latest."""
     if dest.exists() and (dest / ".git").exists():
         run_cmd(["git", "pull", "--ff-only"], cwd=dest)
     else:
         _validate_repo_url(repo_url)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        run_cmd(["git", "clone", "--filter=blob:none", repo_url, str(dest)])
+        cmd = ["git", "clone", "--filter=blob:none"]
+        if clone_strategy == "shallow":
+            cmd.extend(["--depth", "1"])
+        cmd.extend([repo_url, str(dest)])
+        run_cmd(cmd)
 
 
 def get_head_commit(repo_path: Path) -> str:

@@ -394,6 +394,26 @@ class TestUpdate:
         assert result.exit_code == 0
         assert 'Already up to date' in result.output
 
+    def test_update_passes_clone_strategy_to_git_helper(self, tmp_path, monkeypatch):
+        repo = _make_skill_repo(tmp_path, 'repo-upd-shallow', [{'name': 'upd-skill'}])
+        _write_config(tmp_path, [{'repo': str(repo), 'clone_strategy': 'shallow'}])
+
+        runner = CliRunner()
+        install_result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert install_result.exit_code == 0, install_result.output
+
+        clone_strategies = []
+
+        def fake_clone_or_pull(repo_url, dest, clone_strategy=None):
+            clone_strategies.append(clone_strategy)
+            subprocess.run(['git', 'pull', '--ff-only'], cwd=dest, capture_output=True, check=True)
+
+        monkeypatch.setattr('skm.commands.update.clone_or_pull', fake_clone_or_pull)
+
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'update', 'upd-skill'])
+        assert result.exit_code == 0, result.output
+        assert clone_strategies == ['shallow']
+
     def test_update_with_new_commit(self, tmp_path):
         repo = _make_skill_repo(tmp_path, 'repo-upd2', [{'name': 'upd-skill'}])
         _write_config(tmp_path, [{'repo': str(repo)}])

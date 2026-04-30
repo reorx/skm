@@ -85,6 +85,7 @@ agents:
 
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
+    clone_strategy: shallow       # optional: use git clone --filter=blob:none --depth 1
     skills_dir: skills/.curated   # optional: search only this repo-relative directory
     skills:                  # optional: install only these skills (omit = all)
       - vercel-react-best-practices
@@ -100,6 +101,8 @@ packages:
 ```
 
 Each package must specify exactly one of `repo` or `local_path`. Local path packages use the directory directly (no cloning) and are skipped by `check-updates` and `update`.
+
+`clone_strategy: shallow` is optional for repo packages. When set, the first clone uses `git clone --filter=blob:none --depth 1`; omitted or other values keep the default clone command, `git clone --filter=blob:none`. Existing cached repos are reused and pulled, so changing this option does not re-clone an already-present repo.
 
 `skills_dir` is optional and must be a relative path inside the package. When set, skm searches only that directory for `SKILL.md` files instead of using the default detection order.
 

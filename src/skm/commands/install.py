@@ -271,7 +271,7 @@ def _install_repo(
             _progress(f'  Cloning {repo_config.repo}...')
         else:
             click.echo(click.style(f'Cloning {repo_config.repo}...', fg='blue', bold=True))
-        clone_or_pull(repo_config.repo, repo_path)
+        clone_or_pull(repo_config.repo, repo_path, clone_strategy=repo_config.clone_strategy)
 
     commit = get_head_commit(repo_path)
     try:
@@ -293,7 +293,7 @@ def _install_repo(
                 _progress(f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...')
             else:
                 click.echo(click.style(f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...', fg='blue'))
-            clone_or_pull(repo_config.repo, repo_path)
+            clone_or_pull(repo_config.repo, repo_path, clone_strategy=repo_config.clone_strategy)
             commit = get_head_commit(repo_path)
             try:
                 detected = detect_skills(repo_path, repo_config.skills_dir)

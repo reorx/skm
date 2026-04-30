@@ -34,6 +34,54 @@ def test_clone_and_get_commit(tmp_path):
     clone_or_pull(str(src), dest)
 
 
+def test_clone_uses_partial_clone_by_default(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run_cmd(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    monkeypatch.setattr("skm.git.run_cmd", fake_run_cmd)
+
+    dest = tmp_path / "store" / "repo"
+    clone_or_pull("https://github.com/example/repo", dest)
+
+    assert calls == [
+        (
+            ["git", "clone", "--filter=blob:none", "https://github.com/example/repo", str(dest)],
+            {},
+        )
+    ]
+
+
+def test_clone_uses_depth_for_shallow_strategy(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run_cmd(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    monkeypatch.setattr("skm.git.run_cmd", fake_run_cmd)
+
+    dest = tmp_path / "store" / "repo"
+    clone_or_pull("https://github.com/example/repo", dest, clone_strategy="shallow")
+
+    assert calls == [
+        (
+            [
+                "git",
+                "clone",
+                "--filter=blob:none",
+                "--depth",
+                "1",
+                "https://github.com/example/repo",
+                str(dest),
+            ],
+            {},
+        )
+    ]
+
+
 @pytest.mark.network
 def test_clone_real_repo(tmp_path):
     """Clone a real GitHub repo successfully."""

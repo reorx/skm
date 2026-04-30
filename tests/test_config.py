@@ -7,6 +7,7 @@ from skm.types import SkillRepoConfig
 EXAMPLE_YAML = """\
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
+    clone_strategy: shallow
     skills:
       - react-best-practices
       - web-design-guidelines
@@ -33,6 +34,7 @@ def test_load_config(tmp_path):
     config = load_config(config_file)
     assert len(config.packages) == 2
     assert config.packages[0].repo == 'https://github.com/vercel-labs/agent-skills'
+    assert config.packages[0].clone_strategy == 'shallow'
     assert config.packages[0].skills == ['react-best-practices', 'web-design-guidelines']
     assert config.packages[0].agents.excludes == ['openclaw']
     assert config.packages[1].repo == 'https://github.com/blader/humanizer'

@@ -20,6 +20,7 @@ class AgentsConfig(BaseModel):
 class SkillRepoConfig(BaseModel):
     repo: str | None = None
     local_path: str | None = None
+    clone_strategy: str | None = None
     skills_dir: str | None = None
     skills: list[str] | None = None
     agents: AgentsConfig | None = None

@@ -63,6 +63,33 @@ def test_install_basic(tmp_path):
     assert lock_path.exists()
 
 
+def test_install_passes_clone_strategy_to_git_helper(tmp_path, monkeypatch):
+    repo = _make_skill_repo(tmp_path, 'shallow-skill')
+
+    config_path = tmp_path / 'config' / 'skills.yaml'
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        f'packages:\n  - repo: {repo}\n    clone_strategy: shallow\n    skills:\n      - shallow-skill\n'
+    )
+
+    lock_path = tmp_path / 'config' / 'skills-lock.yaml'
+    store_dir = tmp_path / 'store'
+    agents = {'claude': str(tmp_path / 'agents' / 'claude' / 'skills')}
+    clone_strategies = []
+
+    def fake_clone_or_pull(repo_url, dest, clone_strategy=None):
+        clone_strategies.append(clone_strategy)
+        subprocess.run(['git', 'clone', repo_url, str(dest)], capture_output=True, check=True)
+
+    monkeypatch.setattr('skm.commands.install.clone_or_pull', fake_clone_or_pull)
+
+    config = load_config(config_path)
+    run_install(config=config, lock_path=lock_path, store_dir=store_dir, known_agents=agents)
+
+    assert clone_strategies == ['shallow']
+    assert (tmp_path / 'agents' / 'claude' / 'skills' / 'shallow-skill').is_symlink()
+
+
 def test_install_with_skills_dir_limits_detection(tmp_path):
     """Install only skills below a package's explicit skills_dir."""
     repo = tmp_path / 'repo-skills-dir'

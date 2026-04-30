@@ -66,6 +66,16 @@ def _update_repo(
     repo_dir_name = repo_url_to_dirname(repo_url)
     repo_path = store_dir / repo_dir_name
 
+    repo_config = None
+    for c in config.packages:
+        if c.repo == repo_url:
+            repo_config = c
+            break
+
+    if repo_config is None:
+        click.echo(f"  Error: repo '{repo_url}' not found in config. Cannot determine target agents.")
+        raise SystemExit(1)
+
     # Get old commit from any skill in this repo
     old_commit = None
     for s in lock.skills:
@@ -75,7 +85,7 @@ def _update_repo(
 
     # Pull latest
     click.echo(f'Pulling {click.style(repo_url, fg="cyan")}...')
-    clone_or_pull(repo_url, repo_path)
+    clone_or_pull(repo_url, repo_path, clone_strategy=repo_config.clone_strategy)
     new_commit = get_head_commit(repo_path)
 
     if old_commit == new_commit:
@@ -88,16 +98,6 @@ def _update_repo(
     if log:
         for line in log.splitlines():
             click.echo(click.style(f'    {line}', dim=True))
-
-    repo_config = None
-    for c in config.packages:
-        if c.repo == repo_url:
-            repo_config = c
-            break
-
-    if repo_config is None:
-        click.echo(f"  Error: repo '{repo_url}' not found in config. Cannot determine target agents.")
-        raise SystemExit(1)
 
     # Re-detect and re-link
     try:

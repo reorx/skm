@@ -26,6 +26,14 @@ def test_skill_repo_config_with_skills_dir():
     assert cfg.skills_dir == "certain/relative/path"
 
 
+def test_skill_repo_config_with_clone_strategy():
+    cfg = SkillRepoConfig(
+        repo="https://github.com/example/repo",
+        clone_strategy="shallow",
+    )
+    assert cfg.clone_strategy == "shallow"
+
+
 def test_skill_repo_config_rejects_absolute_skills_dir():
     with pytest.raises(ValueError):
         SkillRepoConfig(repo="https://github.com/example/repo", skills_dir="/tmp/skills")
