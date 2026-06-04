@@ -11,7 +11,7 @@ DEFAULT_AGENT_SPECS: dict[str, AgentSpec] = {
     "codex": AgentSpec(path="~/.codex/skills", parent_env_var="CODEX_HOME"),
     "openclaw": AgentSpec(path="~/.openclaw/skills", install_mode="materialize"),
     "pi": AgentSpec(path="~/.pi/agent/skills", parent_env_var="PI_CODING_AGENT_DIR"),
-    "factory": AgentSpec(path="~/.factory/skills"),
+    "factory": AgentSpec(path="~/.factory/skills", install_mode="materialize"),
 }
 
 
