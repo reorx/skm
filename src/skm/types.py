@@ -23,6 +23,7 @@ class SkillRepoConfig(BaseModel):
     clone_strategy: str | None = None
     skills_dir: str | None = None
     skills: list[str] | None = None
+    skills_excludes: list[str] | None = None
     agents: AgentsConfig | None = None
 
     @model_validator(mode='after')
@@ -31,6 +32,12 @@ class SkillRepoConfig(BaseModel):
             raise ValueError("Cannot specify both 'repo' and 'local_path'; exactly one must be set")
         if not self.repo and not self.local_path:
             raise ValueError("Must specify exactly one of 'repo' or 'local_path'")
+        return self
+
+    @model_validator(mode='after')
+    def check_skills_mutual_exclusion(self):
+        if self.skills is not None and self.skills_excludes is not None:
+            raise ValueError("Cannot specify both 'skills' and 'skills_excludes' in a package")
         return self
 
     @field_validator('skills_dir')

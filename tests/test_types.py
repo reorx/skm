@@ -18,6 +18,24 @@ def test_skill_repo_config_with_skills():
     assert cfg.skills == ["react-best-practices", "react-native-skills"]
 
 
+def test_skill_repo_config_with_skills_excludes():
+    cfg = SkillRepoConfig(
+        local_path="~/Code/devblocks",
+        skills_excludes=["team-squad", "team-council"],
+    )
+    assert cfg.skills_excludes == ["team-squad", "team-council"]
+    assert cfg.skills is None
+
+
+def test_skill_repo_config_rejects_skills_and_skills_excludes():
+    with pytest.raises(ValueError):
+        SkillRepoConfig(
+            repo="https://github.com/example/repo",
+            skills=["a"],
+            skills_excludes=["b"],
+        )
+
+
 def test_skill_repo_config_with_skills_dir():
     cfg = SkillRepoConfig(
         repo="https://github.com/example/repo",

@@ -81,6 +81,9 @@ packages:
     agents:                  # optional: further filter agents for this package
       excludes:
         - standard
+  - local_path: ~/Code/devblocks
+    skills_excludes:         # optional: install all skills EXCEPT these (mutually exclusive with skills)
+      - team-squad
   - repo: https://github.com/blader/humanizer   # installs all detected skills to default agents
 ```
 

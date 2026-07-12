@@ -170,6 +170,63 @@ class TestInstall:
         assert len(lock['skills']) == 1
         assert lock['skills'][0]['name'] == 'wanted'
 
+    def test_install_with_skills_excludes(self, tmp_path):
+        repo = _make_skill_repo(
+            tmp_path,
+            'repo-skill-excl',
+            [
+                {'name': 'keep-a'},
+                {'name': 'keep-b'},
+                {'name': 'dropped'},
+            ],
+        )
+        _write_config(tmp_path, [{'repo': str(repo), 'skills_excludes': ['dropped']}])
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+
+        assert result.exit_code == 0, result.output
+        lock = _load_lock(tmp_path)
+        installed = sorted(s['name'] for s in lock['skills'])
+        assert installed == ['keep-a', 'keep-b']
+        assert (tmp_path / 'agents' / 'claude' / 'keep-a').is_symlink()
+        assert (tmp_path / 'agents' / 'claude' / 'keep-b').is_symlink()
+        assert not (tmp_path / 'agents' / 'claude' / 'dropped').exists()
+
+    def test_install_with_skills_excludes_local_path(self, tmp_path):
+        repo = _make_skill_repo(
+            tmp_path,
+            'local-skill-excl',
+            [
+                {'name': 'keep-me'},
+                {'name': 'drop-me'},
+            ],
+        )
+        _write_config(tmp_path, [{'local_path': str(repo), 'skills_excludes': ['drop-me']}])
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+
+        assert result.exit_code == 0, result.output
+        lock = _load_lock(tmp_path)
+        installed = sorted(s['name'] for s in lock['skills'])
+        assert installed == ['keep-me']
+        assert (tmp_path / 'agents' / 'claude' / 'keep-me').is_symlink()
+        assert not (tmp_path / 'agents' / 'claude' / 'drop-me').exists()
+
+    def test_install_rejects_skills_and_skills_excludes(self, tmp_path):
+        repo = _make_skill_repo(tmp_path, 'repo-conflict', [{'name': 'a-skill'}])
+        _write_config(
+            tmp_path,
+            [{'repo': str(repo), 'skills': ['a-skill'], 'skills_excludes': ['other']}],
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+
+        assert result.exit_code != 0
+        assert 'skills_excludes' in str(result.exception)
+
     def test_install_with_agents_excludes(self, tmp_path):
         repo = _make_skill_repo(tmp_path, 'repo-excl', [{'name': 'my-skill'}])
         _write_config(

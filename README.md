@@ -98,6 +98,11 @@ packages:
   - local_path: ~/Code/my-custom-skills         # use a local directory as package source
     skills:
       - my-skill
+
+  - local_path: ~/Code/devblocks
+    skills_excludes:         # optional: install all skills EXCEPT these (mutually exclusive with skills)
+      - team-squad
+      - team-council
 ```
 
 Each package must specify exactly one of `repo` or `local_path`. Local path packages use the directory directly (no cloning) and are skipped by `check-updates` and `update`.
@@ -105,6 +110,8 @@ Each package must specify exactly one of `repo` or `local_path`. Local path pack
 `clone_strategy: shallow` is optional for repo packages. When set, the first clone uses `git clone --filter=blob:none --depth 1`; omitted or other values keep the default clone command, `git clone --filter=blob:none`. Existing cached repos are reused and pulled, so changing this option does not re-clone an already-present repo.
 
 `skills_dir` is optional and must be a relative path inside the package. When set, skm searches only that directory for `SKILL.md` files instead of using the default detection order.
+
+`skills` and `skills_excludes` are mutually exclusive. `skills` installs only the listed skills; `skills_excludes` installs all detected skills except the listed ones. Omitting both installs all detected skills.
 
 ## Install Sync Behavior
 

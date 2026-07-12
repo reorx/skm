@@ -1,38 +1,76 @@
+# skills.example.yaml — copy to ~/.config/skm/skills.yaml and edit.
+#
+# skm treats this file as declarative state: it clones each package, detects
+# skills (directories containing a SKILL.md), and symlinks them into your agent
+# skill dirs. Skills you remove from here are unlinked on the next `skm install`.
+
+# Which agents from KNOWN_AGENTS receive skills by default.
+# Omit this whole block to target every known agent.
+# Known agents: standard, claude, codex, openclaw, pi
 agents:
   default:
     - claude
-    - standard
     - codex
-    - openclaw
+    - standard
 
 packages:
+  # --- Local package --------------------------------------------------------
+  # Point at a directory on disk instead of a git repo — ideal for skills you
+  # author yourself. It's symlinked in place, so your edits apply immediately.
+  - local_path: ~/Code/my-skills
+
+  # --- Whole repo -----------------------------------------------------------
+  # No `skills` filter → every skill detected in the repo is installed.
+  - repo: https://github.com/blader/humanizer
+
+  # --- Pick specific skills -------------------------------------------------
+  # A repo often ships many skills; list only the ones you want.
   - repo: https://github.com/vercel-labs/agent-skills
     skills:
       - vercel-react-best-practices
       - web-design-guidelines
-    agents:
-      excludes:
-       - openclaw
-  - repo: https://github.com/ibelick/ui-skills
+
+  # --- Per-package agent filtering ------------------------------------------
+  # `includes` narrows this package to a subset of the default agents.
+  # Use `excludes` for the inverse. (The two are mutually exclusive.)
+  - repo: https://github.com/vercel-labs/agent-browser
     skills:
-      - baseline-ui
-  - repo: https://github.com/OthmanAdi/planning-with-files
-    skills:
-      - planning-with-files
+      - agent-browser   # drive a real browser: navigate, fill forms, screenshot
+      - dogfood         # exploratory-test a web app and report bugs
+      - electron        # automate Electron desktop apps (VS Code, Slack, ...)
     agents:
-      excludes:
-       - openclaw
-  - repo: https://github.com/blader/humanizer
+      includes:
+        - claude
+        - codex
+
+  # --- Shallow clone --------------------------------------------------------
+  # For big repos where history doesn't matter: clone with --depth 1.
+  - repo: https://github.com/getpaseo/paseo
+    clone_strategy: shallow
+
+  # --- Custom skills directory ----------------------------------------------
+  # When a repo keeps skills somewhere other than its root or ./skills/,
+  # point skm at the right subdirectory with `skills_dir`.
+  - repo: https://github.com/pbakaus/impeccable
+    skills_dir: source
+
+  # --- A grab bag of useful real-world skills -------------------------------
+  - repo: https://github.com/firecrawl/cli
+    skills:
+      - firecrawl-scrape   # extract clean markdown from any URL (JS-rendered too)
+      - firecrawl-search   # web search returning full-page content, not snippets
   - repo: http://github.com/better-auth/skills
     skills:
       - better-auth-best-practices
       - create-auth-skill
   - repo: https://github.com/PsiACE/skills
     skills:
-      - friendly-python
-  - repo: https://github.com/SawyerHood/dev-browser
+      - friendly-python    # write Pythonic, readable code
+      - piglet             # deeper Python craftsmanship review
+  - repo: https://github.com/cloudflare/skills
     skills:
-      - dev-browser
-    agents:
-      excludes:
-        - openclaw
+      - cloudflare         # Workers, KV, D1, R2, AI, and more
+      - wrangler           # the Cloudflare Workers CLI
+  - repo: https://github.com/getsentry/skills
+    skills:
+      - django-perf-review # find N+1 queries and ORM bottlenecks

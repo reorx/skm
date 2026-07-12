@@ -194,6 +194,9 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
         missing = requested - {s.name for s in skills_to_install}
         if missing:
             click.echo(click.style(f'  Warning: skills not found: {missing}', fg='red'))
+    elif repo_config.skills_excludes is not None:
+        excluded = set(repo_config.skills_excludes)
+        skills_to_install = [s for s in detected if s.name not in excluded]
     else:
         skills_to_install = detected
 
@@ -307,6 +310,9 @@ def _install_repo(
                 click.echo(click.style(f'  Warning: skills not found in repo: {still_missing}', fg='red'))
         elif missing:
             click.echo(click.style(f'  Warning: skills not found in repo: {missing}', fg='red'))
+    elif repo_config.skills_excludes is not None:
+        excluded = set(repo_config.skills_excludes)
+        skills_to_install = [s for s in detected if s.name not in excluded]
     else:
         skills_to_install = detected
 
