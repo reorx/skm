@@ -1,6 +1,6 @@
 [project]
 name = "skm-cli"
-version = "0.2.1"
+version = "0.2.2"
 description = "Skill Manager - manage agent skills from GitHub repos"
 readme = "README.md"
 authors = [
