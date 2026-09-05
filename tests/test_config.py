@@ -22,6 +22,9 @@ agents:
   default:
     - claude
     - standard
+  override:
+    codex:
+      path: ~/.custom-codex/skills
 
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
@@ -49,6 +52,7 @@ def test_load_config_with_agents_default(tmp_path):
     config = load_config(config_file)
     assert config.agents is not None
     assert config.agents.default == ['claude', 'standard']
+    assert config.agents.override['codex'].path == '~/.custom-codex/skills'
     assert len(config.packages) == 1
 
 
@@ -57,6 +61,37 @@ def test_load_config_unknown_agent(tmp_path):
     config_file.write_text('agents:\n  default:\n    - nonexistent\npackages:\n  - repo: https://example.com/repo\n')
     with pytest.raises(Exception, match='Unknown agents'):
         load_config(config_file)
+
+
+def test_load_config_unknown_override_agent(tmp_path):
+    config_file = tmp_path / 'skills.yaml'
+    config_file.write_text(
+        'agents:\n'
+        '  override:\n'
+        '    unknown-agent:\n'
+        '      path: ~/.unknown/skills\n'
+        'packages:\n'
+        '  - repo: https://example.com/repo\n'
+    )
+    with pytest.raises(Exception, match="Unknown agent 'unknown-agent' in agents.override"):
+        load_config(config_file)
+
+
+@pytest.mark.parametrize('agent_filter', ['includes', 'excludes'])
+def test_load_config_package_agent_filter_is_not_globally_validated(tmp_path, agent_filter):
+    config_file = tmp_path / 'skills.yaml'
+    config_file.write_text(
+        'agents:\n'
+        '  default:\n'
+        '    - claude\n'
+        'packages:\n'
+        '  - repo: https://example.com/repo\n'
+        '    agents:\n'
+        f'      {agent_filter}:\n'
+        '        - codex\n'
+    )
+    config = load_config(config_file)
+    assert getattr(config.packages[0].agents, agent_filter) == ['codex']
 
 
 def test_load_config_file_not_found(tmp_path):

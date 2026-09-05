@@ -399,6 +399,32 @@ class TestConfigAutoCreation:
         assert 'packages' in config
         assert len(config['packages']) == 1
 
+    def test_agent_prompt_is_limited_to_default_agents(self, tmp_path):
+        """Interactive agent selection should only show default agents."""
+        repo = _make_skill_repo(tmp_path, 'my-skills', [{'name': 'skill-a'}])
+        _write_config(tmp_path, [], agents={'default': ['claude']})
+
+        calls = []
+
+        def _select(options, **kwargs):
+            calls.append(options)
+            return [0]
+
+        with patch('skm.cli.interactive_multi_select', side_effect=_select):
+            runner = CliRunner()
+            result = runner.invoke(cli, [*_cli_args(tmp_path), 'install', str(repo)])
+
+        assert result.exit_code == 0, result.output
+
+        assert calls[1] == ['claude']
+
+        config = _load_config(tmp_path)
+        pkg = config['packages'][0]
+        assert 'agents' not in pkg
+
+        assert (tmp_path / 'agents' / 'claude' / 'skill-a').exists()
+        assert not (tmp_path / 'agents' / 'codex' / 'skill-a').exists()
+
 
 class TestInstallWithoutSource:
     """Scenario: skm install (no source) — existing behavior unchanged."""

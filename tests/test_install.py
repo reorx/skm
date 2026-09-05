@@ -43,8 +43,8 @@ def test_install_basic(tmp_path):
 
     # Use tmp dirs as agent targets
     agents = {
-        'claude': str(tmp_path / 'agents' / 'claude' / 'skills'),
-        'codex': str(tmp_path / 'agents' / 'codex' / 'skills'),
+        'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills')),
+        'codex': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'codex' / 'skills')),
     }
 
     config = load_config(config_path)
@@ -74,7 +74,7 @@ def test_install_passes_clone_strategy_to_git_helper(tmp_path, monkeypatch):
 
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
-    agents = {'claude': str(tmp_path / 'agents' / 'claude' / 'skills')}
+    agents = {'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills'))}
     clone_strategies = []
 
     def fake_clone_or_pull(repo_url, dest, clone_strategy=None, skills_dir=None):
@@ -117,7 +117,7 @@ def test_install_with_skills_dir_limits_detection(tmp_path):
 
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
-    agents = {'claude': str(tmp_path / 'agents' / 'claude' / 'skills')}
+    agents = {'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills'))}
 
     config = load_config(config_path)
     run_install(config=config, lock_path=lock_path, store_dir=store_dir, known_agents=agents)
@@ -140,7 +140,7 @@ def test_install_singleton_skill(tmp_path):
 
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
-    agents = {'claude': str(tmp_path / 'agents' / 'claude' / 'skills')}
+    agents = {'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills'))}
 
     config = load_config(config_path)
     run_install(
@@ -173,8 +173,8 @@ def test_install_removes_skill_dropped_from_config(tmp_path):
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
     agents = {
-        'claude': str(tmp_path / 'agents' / 'claude' / 'skills'),
-        'codex': str(tmp_path / 'agents' / 'codex' / 'skills'),
+        'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills')),
+        'codex': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'codex' / 'skills')),
     }
 
     # First install: both skills
@@ -205,8 +205,8 @@ def test_install_removes_links_for_excluded_agent(tmp_path):
     lock_path = tmp_path / 'config' / 'skills-lock.yaml'
     store_dir = tmp_path / 'store'
     agents = {
-        'claude': str(tmp_path / 'agents' / 'claude' / 'skills'),
-        'codex': str(tmp_path / 'agents' / 'codex' / 'skills'),
+        'claude': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'claude' / 'skills')),
+        'codex': types_mod.AgentSpec(path=str(tmp_path / 'agents' / 'codex' / 'skills')),
     }
 
     # First install: all agents
@@ -244,8 +244,6 @@ def test_install_uses_env_override_path_in_lock(tmp_path, monkeypatch):
 
     monkeypatch.setenv('HOME', str(home))
     monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(claude_config))
-    monkeypatch.setattr('skm.cli.KNOWN_AGENTS', types_mod._get_known_agents())
-
     runner = CliRunner()
     result = runner.invoke(
         cli,

@@ -74,14 +74,14 @@ def run_remove(
             # No skills left in the list, remove the entire package
             config.packages.pop(pkg_index)
             config_modified = True
-            click.echo(f'  Removed package from config (no skills remaining)')
+            click.echo('  Removed package from config (no skills remaining)')
     else:
         # skills is None (all skills) — check if any other lock entries still reference this source
         has_remaining = any((s.repo or s.local_path or '') == source_key for s in lock.skills)
         if not has_remaining:
             config.packages.pop(pkg_index)
             config_modified = True
-            click.echo(f'  Removed package from config (no skills remaining)')
+            click.echo('  Removed package from config (no skills remaining)')
 
     if config_modified:
         save_config(config, config_path)

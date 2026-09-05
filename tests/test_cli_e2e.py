@@ -114,6 +114,43 @@ class TestInstall:
         assert lock['skills'][0]['repo'] == str(repo)
         assert len(lock['skills'][0]['linked_to']) == 5
 
+    def test_install_applies_global_agent_override(self, tmp_path):
+        repo = _make_skill_repo(tmp_path, 'repo-override', [{'name': 'override-skill'}])
+        custom_codex = tmp_path / 'custom-codex' / 'skills'
+        config_path = _write_config(
+            tmp_path,
+            [{'repo': str(repo), 'skills': ['override-skill']}],
+            agents={
+                'default': ['codex'],
+                'override': {
+                    'codex': {
+                        'path': str(custom_codex),
+                        'install_mode': 'materialize',
+                    }
+                },
+            },
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                '--config',
+                str(config_path),
+                '--lock',
+                str(tmp_path / 'config' / 'skills-lock.yaml'),
+                '--store',
+                str(tmp_path / 'store'),
+                'install',
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        installed = custom_codex / 'override-skill'
+        assert installed.is_dir() and not installed.is_symlink()
+        assert (installed / 'SKILL.md').read_text().startswith('---')
+        assert not (tmp_path / 'agents' / 'codex' / 'override-skill').exists()
+
     def test_install_multiple_skills_from_one_repo(self, tmp_path):
         repo = _make_skill_repo(
             tmp_path,
@@ -402,6 +439,27 @@ class TestList:
         assert 'listed-skill' in result.output
         assert str(repo) in result.output
 
+    def test_list_works_when_config_is_invalid(self, tmp_path):
+        repo = _make_skill_repo(tmp_path, 'repo-invalid-list', [{'name': 'listed-skill'}])
+        config_path = _write_config(tmp_path, [{'repo': str(repo)}])
+
+        runner = CliRunner()
+        install_result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert install_result.exit_code == 0, install_result.output
+
+        config_path.write_text(
+            'agents:\n'
+            '  default:\n'
+            '    - nonexistent\n'
+            'packages:\n'
+            f'  - repo: {repo}\n'
+        )
+
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'list'])
+        assert result.exit_code == 0
+        assert 'warning: failed to load config for agent resolution' in result.output.lower()
+        assert 'listed-skill' in result.output
+
     def test_list_all_shows_unmanaged_skills(self, tmp_path):
         """--all shows all skills in agent dirs, marking unmanaged ones."""
         repo = _make_skill_repo(tmp_path, 'repo-all', [{'name': 'managed-skill'}])
@@ -505,6 +563,8 @@ class TestUpdate:
         runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
 
         # Make a new commit in the source repo
+        skill_file = repo / 'skills' / 'upd-skill' / 'SKILL.md'
+        skill_file.write_text('---\nname: upd-skill\ndescription: updated\n---\n# upd-skill\n')
         (repo / 'skills' / 'upd-skill' / 'extra.md').write_text('new content')
         subprocess.run(['git', 'add', '.'], cwd=repo, capture_output=True, check=True)
         subprocess.run(['git', 'commit', '-m', 'add extra'], cwd=repo, capture_output=True, check=True)
@@ -514,13 +574,20 @@ class TestUpdate:
         assert 'Updated' in result.output
         assert 'add extra' in result.output
 
+        standard_dir = tmp_path / 'agents' / 'standard' / 'upd-skill'
+        openclaw_dir = tmp_path / 'agents' / 'openclaw' / 'upd-skill'
+        assert (standard_dir / 'SKILL.md').read_text() == skill_file.read_text()
+        assert (openclaw_dir / 'SKILL.md').read_text() == skill_file.read_text()
+        assert (standard_dir / 'extra.md').read_text() == 'new content'
+        assert (openclaw_dir / 'extra.md').read_text() == 'new content'
+
         # Verify lock has new commit
         lock = _load_lock(tmp_path)
         old_commit = lock['skills'][0]['commit']
         # The commit should be 40 hex chars (full SHA)
         assert len(old_commit) == 40
 
-    def test_update_removes_deleted_materialized_files(self, tmp_path):
+    def test_update_warns_for_deleted_materialized_files(self, tmp_path):
         repo = _make_skill_repo(tmp_path, 'repo-upd3', [{'name': 'upd-skill'}])
         tracked_file = repo / 'skills' / 'upd-skill' / 'extra.md'
         tracked_file.write_text('old content')
@@ -545,8 +612,9 @@ class TestUpdate:
         result = runner.invoke(cli, [*_cli_args(tmp_path), 'update', 'upd-skill'])
         assert result.exit_code == 0, result.output
         assert 'remove extra' in result.output
-        assert not standard_file.exists()
-        assert not openclaw_file.exists()
+        assert 'contains stale files that were not removed' in result.output
+        assert standard_file.exists()
+        assert openclaw_file.exists()
 
 
 class TestCheckUpdates:
