@@ -110,6 +110,9 @@ Defined in `src/skm/types.py` as `KNOWN_AGENTS`:
 - `claude` → `~/.claude/skills`
 - `codex` → `~/.codex/skills`
 - `openclaw` → `~/.openclaw/skills`
+- `pi` → `~/.pi/agent/skills`
+
+All agents get symlinks except `openclaw`, which `AGENT_OPTIONS` sets to `use_hardlink` because OpenClaw skips symlinks that resolve outside its skill roots. `standard` used hardlinks until 2026-10-23, since OpenClaw also reads `~/.agents/skills`. Codex (0.164) and Hermes (0.22) were tested and load symlinked skills there. In symlink mode `link_skill()` swaps a leftover materialized copy for a symlink when `_is_managed_materialized_dir()` says nothing in it differs from the source.
 
 ## Testing
 

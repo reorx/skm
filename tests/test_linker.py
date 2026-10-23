@@ -131,6 +131,55 @@ def test_link_skill_different_source_replaces(tmp_path):
     assert status == 'replaced'
 
 
+def test_link_skill_standard_agent_uses_symlink(tmp_path):
+    """The standard agent (~/.agents/skills) gets a symlink like other agents."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
+    agent_dir = tmp_path / 'agent' / 'skills'
+
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='standard')
+    assert linked.is_symlink()
+    assert linked.resolve() == skill_src.resolve()
+    assert status == 'new'
+
+
+def test_link_skill_symlink_mode_replaces_managed_materialized_copy(tmp_path):
+    """A hardlinked copy left by an older install is swapped for a symlink without force."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    (skill_src / 'references').mkdir(parents=True)
+    (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
+    (skill_src / 'references' / 'a.md').write_text('a')
+    agent_dir = tmp_path / 'agent' / 'skills'
+
+    copy, _ = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    assert copy.is_dir() and not copy.is_symlink()
+    # Upstream added a file the copy never picked up; the copy is still a managed subset.
+    (skill_src / 'new.md').write_text('new')
+
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='standard')
+    assert linked.is_symlink()
+    assert linked.resolve() == skill_src.resolve()
+    assert status == 'replaced'
+
+
+def test_link_skill_symlink_mode_keeps_diverged_copy(tmp_path):
+    """A copy whose content differs from the source is not replaced without force."""
+    skill_src = tmp_path / 'store' / 'my-skill'
+    skill_src.mkdir(parents=True)
+    (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\nsource\n')
+    agent_dir = tmp_path / 'agent' / 'skills'
+
+    copy, _ = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    # An editor replaced the file in the copy: new inode, different content.
+    (copy / 'SKILL.md').unlink()
+    (copy / 'SKILL.md').write_text('---\nname: my-skill\n---\nedited in copy\n')
+
+    with pytest.raises(FileExistsError):
+        link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='standard')
+    assert (copy / 'SKILL.md').read_text().endswith('edited in copy\n')
+
+
 def test_link_skill_hardlink_mode_falls_back_to_reflink(monkeypatch, tmp_path):
     """Hardlink mode falls back to reflink/COW clone when source and target devices differ."""
     skill_src = tmp_path / 'store' / 'my-skill'

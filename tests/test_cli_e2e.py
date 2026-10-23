@@ -99,13 +99,12 @@ class TestInstall:
         assert 'my-skill' in result.output
 
         # Verify links created for all agents
-        for agent in ['claude', 'codex', 'pi']:
+        for agent in ['claude', 'codex', 'pi', 'standard']:
             link = tmp_path / 'agents' / agent / 'my-skill'
             assert link.is_symlink(), f'Missing symlink for {agent}'
-        # standard and openclaw use hardlinks (directory with hardlinked files)
-        for agent in ['standard', 'openclaw']:
-            hardlink = tmp_path / 'agents' / agent / 'my-skill'
-            assert hardlink.is_dir() and not hardlink.is_symlink(), f'Missing hardlinked dir for {agent}'
+        # openclaw uses hardlinks (directory with hardlinked files)
+        hardlink = tmp_path / 'agents' / 'openclaw' / 'my-skill'
+        assert hardlink.is_dir() and not hardlink.is_symlink(), 'Missing hardlinked dir for openclaw'
 
         # Verify lock file
         lock = _load_lock(tmp_path)
@@ -113,6 +112,30 @@ class TestInstall:
         assert lock['skills'][0]['name'] == 'my-skill'
         assert lock['skills'][0]['repo'] == str(repo)
         assert len(lock['skills'][0]['linked_to']) == 5
+
+    def test_install_migrates_hardlinked_standard_copy_to_symlink(self, tmp_path):
+        """A hardlinked copy from an older skm version becomes a symlink on install, without a prompt."""
+        repo = _make_skill_repo(tmp_path, 'repo-migrate', [{'name': 'my-skill'}])
+        _write_config(tmp_path, [{'repo': str(repo)}], agents={'default': ['standard']})
+
+        runner = CliRunner()
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert result.exit_code == 0, result.output
+
+        # Recreate what older versions left behind: a dir of hardlinks into the store.
+        link = tmp_path / 'agents' / 'standard' / 'my-skill'
+        src = link.resolve()
+        link.unlink()
+        link.mkdir()
+        for f in src.iterdir():
+            if f.is_file():
+                (link / f.name).hardlink_to(f)
+
+        result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
+        assert result.exit_code == 0, result.output
+        assert 'Override?' not in result.output
+        assert link.is_symlink()
+        assert link.resolve() == src
 
     def test_install_multiple_skills_from_one_repo(self, tmp_path):
         repo = _make_skill_repo(
@@ -336,9 +359,7 @@ class TestInstall:
         # Add a new skill to the source repo
         new_skill_dir = repo / 'skills' / 'new-skill'
         new_skill_dir.mkdir(parents=True, exist_ok=True)
-        (new_skill_dir / 'SKILL.md').write_text(
-            '---\nname: new-skill\ndescription: a new skill\n---\n# new-skill\n'
-        )
+        (new_skill_dir / 'SKILL.md').write_text('---\nname: new-skill\ndescription: a new skill\n---\n# new-skill\n')
         subprocess.run(['git', 'add', '.'], cwd=repo, capture_output=True, check=True)
         subprocess.run(['git', 'commit', '-m', 'add new-skill'], cwd=repo, capture_output=True, check=True)
 

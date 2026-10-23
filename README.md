@@ -153,11 +153,15 @@ When skm links a skill into an agent directory, it picks a strategy based on the
 
 ### 1. Symlink (default)
 
-A symbolic link from `<agent_dir>/skills/<skill_name>` → `<store>/<skill_name>`. This is the default for all agents. Changes in the store are immediately visible.
+A symbolic link from `<agent_dir>/skills/<skill_name>` → `<store>/<skill_name>`. This is the default for all agents except `openclaw`. Changes in the store are immediately visible.
+
+If the agent dir holds a copy that an older skm version materialized (every file identical to the source or a hardlink of it), `skm install` replaces it with a symlink without asking. A copy whose content differs from the source still prompts before it is overwritten.
 
 ### 2. Hardlink
 
 When `use_hardlink: true` is set for an agent in `AGENT_OPTIONS`, skm creates hardlinks instead. Each file in the skill directory gets its own hardlink pointing to the same inode as the source. This only works when source and target are on the **same filesystem/device**.
+
+Only `openclaw` uses this, because OpenClaw skips skill symlinks whose real path is outside its skill root. Hardlinks break when an editor saves a file by replacing it, and new or dot-prefixed files are not carried over, so the copy needs another `skm install` after the source changes.
 
 ### 3. Reflink (copy-on-write)
 

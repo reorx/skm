@@ -142,10 +142,11 @@ KNOWN_AGENTS: dict[str, str] = _get_known_agents()
 # Per-agent install options. Agents not listed here use defaults (symlink).
 # Options:
 #   use_hardlink: bool - use hard links instead of symlinks for skill installation
+# openclaw skips skill symlinks whose target resolves outside its skill roots.
+# standard (~/.agents/skills) used hard links for the same reason, since openclaw also
+# reads that dir; dropped because codex and hermes follow symlinks there, and hard links
+# break as soon as an editor replaces a file in the source.
 AGENT_OPTIONS: dict[str, dict] = {
-    'standard': {
-        'use_hardlink': True,
-    },
     'openclaw': {
         'use_hardlink': True,
     },

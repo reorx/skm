@@ -173,6 +173,12 @@ def link_skill(
         link_path.symlink_to(skill_src)
         return (link_path, 'replaced')
 
+    if _is_managed_materialized_dir(link_path, skill_src):
+        # A copy materialized while this agent used hard links; nothing in it is lost.
+        shutil.rmtree(link_path)
+        link_path.symlink_to(skill_src)
+        return (link_path, 'replaced')
+
     if link_path.exists():
         if force:
             if link_path.is_dir():
