@@ -156,8 +156,8 @@ def test_detect_taste_skill_repo(tmp_path):
     clone_or_pull('https://github.com/Leonxlnx/taste-skill', dest)
     skills = detect_skills(dest)
     names = {s.name for s in skills}
+    # Upstream dropped redesign-existing-projects; skills/taste-skill is the only skill left.
     assert 'design-taste-frontend' in names
-    assert 'redesign-existing-projects' in names
 
 
 @pytest.mark.network
