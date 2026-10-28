@@ -248,7 +248,7 @@ class TestInstall:
         result = runner.invoke(cli, [*_cli_args(tmp_path), 'install'])
 
         assert result.exit_code != 0
-        assert 'skills_excludes' in str(result.exception)
+        assert 'skills_excludes' in result.output
 
     def test_install_with_agents_excludes(self, tmp_path):
         repo = _make_skill_repo(tmp_path, 'repo-excl', [{'name': 'my-skill'}])

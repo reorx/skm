@@ -1,3 +1,4 @@
+from skm.types import ResolvedAgent
 import errno
 import shutil
 
@@ -9,16 +10,16 @@ from skm.linker import resolve_target_agents, link_skill, unlink_skill
 
 def test_resolve_target_agents_all(tmp_path):
     """No includes/excludes → all agents."""
-    agents = {'claude': str(tmp_path / 'claude'), 'codex': str(tmp_path / 'codex')}
+    agents = {'claude': ResolvedAgent(path=str(tmp_path / 'claude')), 'codex': ResolvedAgent(path=str(tmp_path / 'codex'))}
     result = resolve_target_agents(None, agents)
     assert set(result.keys()) == {'claude', 'codex'}
 
 
 def test_resolve_target_agents_excludes(tmp_path):
     agents = {
-        'claude': str(tmp_path / 'claude'),
-        'codex': str(tmp_path / 'codex'),
-        'openclaw': str(tmp_path / 'openclaw'),
+        'claude': ResolvedAgent(path=str(tmp_path / 'claude')),
+        'codex': ResolvedAgent(path=str(tmp_path / 'codex')),
+        'openclaw': ResolvedAgent(path=str(tmp_path / 'openclaw')),
     }
     from skm.types import AgentsConfig
 
@@ -30,9 +31,9 @@ def test_resolve_target_agents_excludes(tmp_path):
 
 def test_resolve_target_agents_includes(tmp_path):
     agents = {
-        'claude': str(tmp_path / 'claude'),
-        'codex': str(tmp_path / 'codex'),
-        'openclaw': str(tmp_path / 'openclaw'),
+        'claude': ResolvedAgent(path=str(tmp_path / 'claude')),
+        'codex': ResolvedAgent(path=str(tmp_path / 'codex')),
+        'openclaw': ResolvedAgent(path=str(tmp_path / 'openclaw')),
     }
     from skm.types import AgentsConfig
 
@@ -138,7 +139,7 @@ def test_link_skill_standard_agent_uses_symlink(tmp_path):
     (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
     agent_dir = tmp_path / 'agent' / 'skills'
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='standard')
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir))
     assert linked.is_symlink()
     assert linked.resolve() == skill_src.resolve()
     assert status == 'new'
@@ -152,12 +153,12 @@ def test_link_skill_symlink_mode_replaces_managed_materialized_copy(tmp_path):
     (skill_src / 'references' / 'a.md').write_text('a')
     agent_dir = tmp_path / 'agent' / 'skills'
 
-    copy, _ = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    copy, _ = link_skill(skill_src, 'my-skill', str(agent_dir), install_mode='materialize')
     assert copy.is_dir() and not copy.is_symlink()
     # Upstream added a file the copy never picked up; the copy is still a managed subset.
     (skill_src / 'new.md').write_text('new')
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='standard')
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir))
     assert linked.is_symlink()
     assert linked.resolve() == skill_src.resolve()
     assert status == 'replaced'
@@ -170,13 +171,13 @@ def test_link_skill_symlink_mode_keeps_diverged_copy(tmp_path):
     (skill_src / 'SKILL.md').write_text('---\nname: my-skill\n---\nsource\n')
     agent_dir = tmp_path / 'agent' / 'skills'
 
-    copy, _ = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    copy, _ = link_skill(skill_src, 'my-skill', str(agent_dir), install_mode='materialize')
     # An editor replaced the file in the copy: new inode, different content.
     (copy / 'SKILL.md').unlink()
     (copy / 'SKILL.md').write_text('---\nname: my-skill\n---\nedited in copy\n')
 
     with pytest.raises(FileExistsError):
-        link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='standard')
+        link_skill(skill_src, 'my-skill', str(agent_dir))
     assert (copy / 'SKILL.md').read_text().endswith('edited in copy\n')
 
 
@@ -193,7 +194,7 @@ def test_link_skill_hardlink_mode_falls_back_to_reflink(monkeypatch, tmp_path):
     monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
     monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), install_mode='materialize')
 
     cloned_file = linked / 'SKILL.md'
     assert linked.is_dir() and not linked.is_symlink()
@@ -214,9 +215,9 @@ def test_link_skill_reuses_existing_materialized_copy(monkeypatch, tmp_path):
     monkeypatch.setattr(linker, '_select_materialization_mode', lambda *_args: 'reflink')
     monkeypatch.setattr(linker, '_clone_file_reflink', lambda src, dst: shutil.copy2(src, dst))
 
-    link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    link_skill(skill_src, 'my-skill', str(agent_dir), install_mode='materialize')
     (skill_src / 'extra.md').write_text('new content')
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), install_mode='materialize')
     assert linked.is_dir() and not linked.is_symlink()
     assert status == 'exists'
     assert (linked / 'extra.md').read_text() == 'new content'
@@ -239,7 +240,7 @@ def test_link_skill_reflink_mode_falls_back_to_copy(monkeypatch, tmp_path):
 
     monkeypatch.setattr(linker, '_clone_file_reflink', _raise_unsupported)
 
-    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+    linked, status = link_skill(skill_src, 'my-skill', str(agent_dir), install_mode='materialize')
 
     copied_file = linked / 'SKILL.md'
     assert linked.is_dir() and not linked.is_symlink()
@@ -265,7 +266,7 @@ def test_link_skill_reflink_mode_preserves_unhandled_oserror(monkeypatch, tmp_pa
     monkeypatch.setattr(linker, '_clone_file_reflink', _raise_unexpected)
 
     with pytest.raises(OSError, match='disk error'):
-        link_skill(skill_src, 'my-skill', str(agent_dir), agent_name='openclaw')
+        link_skill(skill_src, 'my-skill', str(agent_dir), install_mode='materialize')
 
 
 def test_select_materialization_mode_uses_reflink_across_devices(monkeypatch, tmp_path):

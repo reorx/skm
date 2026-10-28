@@ -5,20 +5,15 @@ from pathlib import Path
 from typing import Literal
 
 from skm.clonefile import clone_file, is_reflink_unsupported, reflink_supported
-from skm.types import AGENT_OPTIONS, AgentsConfig
+from skm.types import AgentInstallMode, ResolvedAgent, AgentsConfig
 
 MaterializationMode = Literal['hardlink', 'reflink', 'copy']
 
 
-def _get_agent_option(agent_name: str, option: str, default=None):
-    """Look up a per-agent option from AGENT_OPTIONS."""
-    return AGENT_OPTIONS.get(agent_name, {}).get(option, default)
-
-
 def resolve_target_agents(
     agents_config: AgentsConfig | None,
-    known_agents: dict[str, str],
-) -> dict[str, str]:
+    known_agents: dict[str, ResolvedAgent],
+) -> dict[str, ResolvedAgent]:
     """Determine which agents to install to based on includes/excludes."""
     if agents_config is None:
         return dict(known_agents)
@@ -134,18 +129,17 @@ def _select_materialization_mode(skill_src: Path, target_dir: Path) -> Materiali
 
 
 def link_skill(
-    skill_src: Path, skill_name: str, agent_skills_dir: str, force: bool = False, agent_name: str = ''
+    skill_src: Path, skill_name: str, agent_skills_dir: str, force: bool = False, install_mode: AgentInstallMode = 'symlink'
 ) -> tuple[Path, str]:
-    """Create a symlink (or hardlink tree) from agent_skills_dir/skill_name -> skill_src.
+    """Create a symlink (or materialized tree) from agent_skills_dir/skill_name -> skill_src.
 
     Returns (link_path, status) where status is "new", "exists", or "replaced".
     """
-    use_hardlink = _get_agent_option(agent_name, 'use_hardlink', False)
     target_dir = Path(agent_skills_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     link_path = target_dir / skill_name
 
-    if use_hardlink:
+    if install_mode == 'materialize':
         # Materialized mode: prefer hardlink, fall back to reflink when devices differ.
         mode = _select_materialization_mode(skill_src, target_dir)
         if link_path.exists() and not link_path.is_symlink():
@@ -199,3 +193,10 @@ def unlink_skill(skill_name: str, agent_skills_dir: str) -> None:
         link_path.unlink()
     elif link_path.is_dir():
         shutil.rmtree(link_path)
+
+
+def find_ignored_includes(agents_config: AgentsConfig | None, known_agents: dict[str, ResolvedAgent]) -> list[str]:
+    """Return includes outside the active default set, preserving config order."""
+    if agents_config is None or agents_config.includes is None:
+        return []
+    return [name for name in agents_config.includes if name not in known_agents]

@@ -1,6 +1,44 @@
-import os
+from typing import Literal
 from pathlib import Path, PurePosixPath
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+
+AgentInstallMode = Literal['symlink', 'materialize']
+
+
+class AgentSpec(BaseModel):
+    path: str
+    env_var: str | None = None
+    install_mode: AgentInstallMode = 'symlink'
+
+
+class ResolvedAgent(BaseModel):
+    path: str
+    install_mode: AgentInstallMode = 'symlink'
+
+
+class AgentOverride(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    path: str | None = None
+    install_mode: AgentInstallMode | None = None
+
+    @field_validator('path')
+    @classmethod
+    def check_path(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("'path' cannot be empty")
+        return value
+
+
+# OpenClaw skips symlinks outside its skill roots. Standard stays symlink-based:
+# Codex and Hermes follow those links, and source edits can replace hardlink inodes.
+BUILTIN_AGENTS: dict[str, AgentSpec] = {
+    'standard': AgentSpec(path='~/.agents/skills'),
+    'claude': AgentSpec(path='~/.claude/skills', env_var='CLAUDE_CONFIG_DIR'),
+    'codex': AgentSpec(path='~/.codex/skills', env_var='CODEX_HOME'),
+    'openclaw': AgentSpec(path='~/.openclaw/skills', install_mode='materialize'),
+    'pi': AgentSpec(path='~/.pi/agent/skills', env_var='PI_CODING_AGENT_DIR'),
+}
 
 
 # --- Config models (parsed from skills.yaml) ---
@@ -63,22 +101,23 @@ class SkillRepoConfig(BaseModel):
         return self.repo
 
 
-class DefaultAgentsConfig(BaseModel):
+class GlobalAgentsConfig(BaseModel):
     default: list[str] | None = None
+    override: dict[str, AgentOverride] | None = None
 
-    @field_validator('default')
+    @field_validator('default', 'override')
     @classmethod
-    def check_known_agents(cls, v: list[str] | None) -> list[str] | None:
+    def check_known_agents(cls, v):
         if v is not None:
-            unknown = [a for a in v if a not in KNOWN_AGENTS]
+            unknown = [a for a in v if a not in BUILTIN_AGENTS]
             if unknown:
-                raise ValueError(f'Unknown agents: {unknown}. Known agents: {list(KNOWN_AGENTS.keys())}')
+                raise ValueError(f'Unknown agents: {unknown}. Known agents: {list(BUILTIN_AGENTS.keys())}')
         return v
 
 
 class SkmConfig(BaseModel):
     packages: list[SkillRepoConfig]
-    agents: DefaultAgentsConfig | None = None
+    agents: GlobalAgentsConfig | None = None
 
 
 # --- Lock file models ---
@@ -90,7 +129,7 @@ class InstalledSkill(BaseModel):
     local_path: str | None = None
     commit: str | None = None
     skill_path: str  # relative path within repo to the skill dir
-    linked_to: list[str]  # list of absolute symlink paths
+    linked_to: list[str]  # installation paths (home compacted to ~)
 
 
 class LockFile(BaseModel):
@@ -109,48 +148,6 @@ class DetectedSkill(BaseModel):
 
 
 # --- Constants ---
-
-_KNOWN_AGENTS_DEFAULTS: dict[str, str] = {
-    'standard': '~/.agents/skills',
-    'claude': '~/.claude/skills',
-    'codex': '~/.codex/skills',
-    'openclaw': '~/.openclaw/skills',
-    'pi': '~/.pi/agent/skills',
-}
-
-# Env vars that override per-agent skill directory base.
-# If set, the agent's skill dir becomes $ENV_VAR/skills.
-_AGENT_ENV_OVERRIDES: dict[str, str] = {
-    'claude': 'CLAUDE_CONFIG_DIR',
-    'codex': 'CODEX_HOME',
-}
-
-
-def _get_known_agents() -> dict[str, str]:
-    """Return known agents dict, applying env-var overrides where set."""
-
-    result = dict(_KNOWN_AGENTS_DEFAULTS)
-    for agent, env_var in _AGENT_ENV_OVERRIDES.items():
-        val = os.environ.get(env_var)
-        if val:
-            result[agent] = str(Path(val).expanduser() / 'skills')
-    return result
-
-
-KNOWN_AGENTS: dict[str, str] = _get_known_agents()
-
-# Per-agent install options. Agents not listed here use defaults (symlink).
-# Options:
-#   use_hardlink: bool - use hard links instead of symlinks for skill installation
-# openclaw skips skill symlinks whose target resolves outside its skill roots.
-# standard (~/.agents/skills) used hard links for the same reason, since openclaw also
-# reads that dir; dropped because codex and hermes follow symlinks there, and hard links
-# break as soon as an editor replaces a file in the source.
-AGENT_OPTIONS: dict[str, dict] = {
-    'openclaw': {
-        'use_hardlink': True,
-    },
-}
 
 CONFIG_DIR = Path('~/.config/skm').expanduser()
 CONFIG_PATH = CONFIG_DIR / 'skills.yaml'

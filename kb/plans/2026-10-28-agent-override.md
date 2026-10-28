@@ -122,44 +122,44 @@ Warning: package https://github.com/foo/bar includes agents not in agents.defaul
 ### 验收标准
 
 **override**
-- [ ] 没有 `agents.override` 的旧配置，install 结果和改动前一致（目录、安装方式、lock 内容）。
-- [ ] 只写 `override.<名字>.path`，skill 装到该目录，安装方式保持内置值。
-- [ ] 只写 `override.<名字>.install_mode`，安装方式改变，目录保持内置值；设置了对应环境变量时，目录仍然跟着环境变量走。
-- [ ] `override.standard.install_mode: materialize` 后，`~/.agents/skills` 下是实体目录而不是软链。
-- [ ] `path` 里的 `~` 被展开；lock 里记录的路径仍然把 home 写成 `~`。
-- [ ] `override` 里写不认识的 agent 名、非法的 `install_mode`、空的 `path`，install 报错退出，提示指出具体问题，没有改动任何安装。
+- [x] 没有 `agents.override` 的旧配置，install 结果和改动前一致（目录、安装方式、lock 内容）。
+- [x] 只写 `override.<名字>.path`，skill 装到该目录，安装方式保持内置值。
+- [x] 只写 `override.<名字>.install_mode`，安装方式改变，目录保持内置值；设置了对应环境变量时，目录仍然跟着环境变量走。
+- [x] `override.standard.install_mode: materialize` 后，`~/.agents/skills` 下是实体目录而不是软链。
+- [x] `path` 里的 `~` 被展开；lock 里记录的路径仍然把 home 写成 `~`。
+- [x] `override` 里写不认识的 agent 名、非法的 `install_mode`、空的 `path`，install 报错退出，提示指出具体问题，没有改动任何安装。
 
 **优先级**
-- [ ] 同时设置 `--agents-dir`、`override.path`、环境变量时，用 `--agents-dir`；去掉 `--agents-dir` 用 `override.path`；再去掉用环境变量；都没有用内置目录。
+- [x] 同时设置 `--agents-dir`、`override.path`、环境变量时，用 `--agents-dir`；去掉 `--agents-dir` 用 `override.path`；再去掉用环境变量；都没有用内置目录。
 
 **修改之后**
-- [ ] 改 `override.path` 后执行 `skm install`：旧位置上 SKM 装过的 skill 被删除，新位置装上，输出列出被移除的路径。
-- [ ] 旧目录里用户自己放的文件或目录，在上一条之后仍然存在。
-- [ ] 改 `override.path`、上游有新提交后先执行 `skm update <skill>`：新位置装上，旧位置上该 skill 的安装被删除，lock 只记录新位置。
-- [ ] 改 `override.path` 后、上游没有新提交时执行 `skm update <skill>`：输出 Already up to date，旧位置的安装和 lock 都不变；之后 `skm install` 完成迁移。
-- [ ] 从 `agents.default` 去掉一个 agent、上游有新提交后执行 `skm update <skill>`，该 agent 目录下这个 skill 被删除。
-- [ ] 改 `override.path` 后执行 `skm install <source>` 重新安装这个包，旧位置上这个包的 skill 被删除。
+- [x] 改 `override.path` 后执行 `skm install`：旧位置上 SKM 装过的 skill 被删除，新位置装上，输出列出被移除的路径。
+- [x] 旧目录里用户自己放的文件或目录，在上一条之后仍然存在。
+- [x] 改 `override.path`、上游有新提交后先执行 `skm update <skill>`：新位置装上，旧位置上该 skill 的安装被删除，lock 只记录新位置。
+- [x] 改 `override.path` 后、上游没有新提交时执行 `skm update <skill>`：输出 Already up to date，旧位置的安装和 lock 都不变；之后 `skm install` 完成迁移。
+- [x] 从 `agents.default` 去掉一个 agent、上游有新提交后执行 `skm update <skill>`，该 agent 目录下这个 skill 被删除。
+- [x] 改 `override.path` 后执行 `skm install <source>` 重新安装这个包，旧位置上这个包的 skill 被删除。
 
 **列表**
-- [ ] lock 里路径为 `~/.agents/skills-extra/demo` 时，`skm list` 不把它显示成 `standard`。
-- [ ] 用 `--agents-dir` 安装后，用同样的 `--agents-dir` 执行 `skm list`，能显示正确的 agent 名。
-- [ ] 用 `override.path` 安装后，`skm list` 和 `skm list --all` 都显示正确的 agent 名。
-- [ ] skill 装到了不在 `agents.default` 里、但仍是内置 agent 的目录时，`skm list` 能显示它的 agent 名。
-- [ ] 配置文件写坏后，`skm list` 打印警告并照常列出 skill；`skm install` 报错退出。
+- [x] lock 里路径为 `~/.agents/skills-extra/demo` 时，`skm list` 不把它显示成 `standard`。
+- [x] 用 `--agents-dir` 安装后，用同样的 `--agents-dir` 执行 `skm list`，能显示正确的 agent 名。
+- [x] 用 `override.path` 安装后，`skm list` 和 `skm list --all` 都显示正确的 agent 名。
+- [x] skill 装到了不在 `agents.default` 里、但仍是内置 agent 的目录时，`skm list` 能显示它的 agent 名。
+- [x] 配置文件写坏后，`skm list` 打印警告并照常列出 skill；`skm install` 报错退出。
 
 **选择器**
-- [ ] `agents.default: [claude, standard]` 时，选择器只列出这两个，且都已预选。
-- [ ] 上一条直接确认后，配置里这个包没有 `agents` 字段；之后在 `agents.default` 加上 codex 再 `skm install`，这个包也装到 codex。
-- [ ] 只勾选 claude 确认后，配置写入 `includes: [claude]`，只装到 claude。
-- [ ] 没有设置 `agents.default` 时，选择器列出全部内置 agent，全部预选。
+- [x] `agents.default: [claude, standard]` 时，选择器只列出这两个，且都已预选。
+- [x] 上一条直接确认后，配置里这个包没有 `agents` 字段；之后在 `agents.default` 加上 codex 再 `skm install`，这个包也装到 codex。
+- [x] 只勾选 claude 确认后，配置写入 `includes: [claude]`，只装到 claude。
+- [x] 没有设置 `agents.default` 时，选择器列出全部内置 agent，全部预选。
 
 **includes 警告**
-- [ ] 包的 `includes` 含 default 以外的 agent 时，`skm install` 打印警告，写明包名和被忽略的 agent，退出码为 0，配置文件未被修改。
-- [ ] `includes` 含拼错的名字时，同样给出警告。
-- [ ] `includes` 全在 default 范围内时，没有警告。
+- [x] 包的 `includes` 含 default 以外的 agent 时，`skm install` 打印警告，写明包名和被忽略的 agent，退出码为 0，配置文件未被修改。
+- [x] `includes` 含拼错的名字时，同样给出警告。
+- [x] `includes` 全在 default 范围内时，没有警告。
 
 **Pi**
-- [ ] 设置 `PI_CODING_AGENT_DIR=~/pi-home` 后，Pi 的 skill 装到 `~/pi-home/skills`；未设置时装到 `~/.pi/agent/skills`。
+- [x] 设置 `PI_CODING_AGENT_DIR=~/pi-home` 后，Pi 的 skill 装到 `~/pi-home/skills`；未设置时装到 `~/.pi/agent/skills`。
 
 ## Tech Design
 
@@ -279,14 +279,14 @@ BUILTIN_AGENTS: dict[str, AgentSpec] = {   # 顺序即各处的展示顺序，�
 
 每一步先写测试并确认失败（重构步骤则先确认现有测试全绿），再实现，最后 `uv run pytest -m "not network"` 全绿。每一步可以单独提交。
 
-- [ ] **1. 统一 agent 解析（重构，外部行为不变，顺带支持 Pi 环境变量）**：`types.py` 加入新模型和 `BUILTIN_AGENTS`（先不加 `override` 字段）；新增 `agents.py` 和 `tests/test_agents.py`；linker、install、update、list、cli 改用 `ResolvedAgent` / `install_mode`；按"测试与验证"里的清单调整已有测试。
-- [ ] **2. 列表归属精确匹配（TDD）**：先写前缀误判、`--agents-dir`、非 default 内置 agent 三个失败用例，再改 `_agent_name_from_link` 和 cli 的 list 分支。
-- [ ] **3. 直接安装的选择器（TDD）**：先写选择器三个场景的 e2e 失败用例，再改 cli。
-- [ ] **4. includes 警告（BDD）**：先写三个场景的用例，再加 `find_ignored_includes` 和打印。
-- [ ] **5. `agents.override`（BDD）**：先写校验、路径、模式、优先级的用例，再加 `AgentOverride`、`GlobalAgentsConfig.override`、`resolve_agents` 里的 override 分支，以及 `_load_config` 的错误转换。
-- [ ] **6. 清理旧安装（TDD）**：先写 install 迁移、update 迁移（有新提交和无新提交）、直接安装迁移的用例，再抽 `_remove_stale_links`，改 `run_install_package` 和 `_update_repo`。
-- [ ] **7. list 读配置失败时降级**：先写用例，再加 `_resolve_list_agents` 的降级分支。
-- [ ] **8. 文档和收尾**：
+- [x] **1. 统一 agent 解析（重构，外部行为不变，顺带支持 Pi 环境变量）**：`types.py` 加入新模型和 `BUILTIN_AGENTS`（先不加 `override` 字段）；新增 `agents.py` 和 `tests/test_agents.py`；linker、install、update、list、cli 改用 `ResolvedAgent` / `install_mode`；按"测试与验证"里的清单调整已有测试。
+- [x] **2. 列表归属精确匹配（TDD）**：先写前缀误判、`--agents-dir`、非 default 内置 agent 三个失败用例，再改 `_agent_name_from_link` 和 cli 的 list 分支。
+- [x] **3. 直接安装的选择器（TDD）**：先写选择器三个场景的 e2e 失败用例，再改 cli。
+- [x] **4. includes 警告（BDD）**：先写三个场景的用例，再加 `find_ignored_includes` 和打印。
+- [x] **5. `agents.override`（BDD）**：先写校验、路径、模式、优先级的用例，再加 `AgentOverride`、`GlobalAgentsConfig.override`、`resolve_agents` 里的 override 分支，以及 `_load_config` 的错误转换。
+- [x] **6. 清理旧安装（TDD）**：先写 install 迁移、update 迁移（有新提交和无新提交）、直接安装迁移的用例，再抽 `_remove_stale_links`，改 `run_install_package` 和 `_update_repo`。
+- [x] **7. list 读配置失败时降级**：先写用例，再加 `_resolve_list_agents` 的降级分支。
+- [x] **8. 文档和收尾**：
   - 更新 `AGENTS.md`：Project Structure 加 `agents.py`；Config Format 加 `override`；Known Agents 段改为描述 `BUILTIN_AGENTS`、优先级和 `install_mode`。
   - 更新 README：Config Format、Known Agents 表加环境变量列、Linking Strategies 里 `AGENT_OPTIONS` / `use_hardlink` 改为 `install_mode`。动手前先读 `~/.claude/docs/GITHUB_README.md`。
   - 从 `kb/known-issues.md` 删除"列表前缀误判"和"选择器"两条。
@@ -331,3 +331,14 @@ PRD 验收标准对应的用例（e2e 都在 `tests/test_cli_e2e.py`，用 `_cli
 - **改配置后 list 的显示**：改了 override.path 但还没 install 时，lock 里的旧路径不属于任何 agent，list 不显示 agent 名（PRD 已写明）。
 - **progress 行和警告交错**：非 verbose 模式下，进度行写在 stderr，警告写在 stdout。警告前必须先 `_clear_progress()`，否则会接在进度行后面。人工验收时重点看。
 - **PR #7 的署名**：实现参考了 PR #7 的思路（统一解析、父目录比较、选择器只列 default）。提交时可以考虑加 `Co-authored-by`，由用户决定。
+
+
+## 实施结果（2026-10-28）
+
+已完成全部步骤，代码和文档统一提交。测试先确认原有 146 个离线用例通过，再新增失败行为用例，完成实现后通过 180 个离线测试（4 个 network 用例未运行）。新增行为测试集中在 `tests/test_agent_override.py`，解析单元测试在 `tests/test_agents.py`。
+
+实现补充：配置错误处理包含 ruamel.yaml 的 `YAMLError` 和文件读取错误，避免仅捕获 `ValueError` 时遗漏语法错误；直接安装在 clone 前校验配置；直接安装清理时也保留其他包仍记录的路径。update 对被忽略的 includes 在 Already up to date 分支之前也给出警告。
+
+PTY 验证选择器全选、materialize 安装、includes 警告和迁移清理输出；隔离样例与脚本保存在 `tmp/2026-10-28-agent-override/`，未使用真实 SKM 配置或 agent 目录。验收中发现已有的相对 local_path 软链问题，已记入 known issues，绝对源路径下复验文件可读。
+
+详见 [实施总结](../sessions/2026-10-28-agent-override.md)。

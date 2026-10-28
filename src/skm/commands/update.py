@@ -5,9 +5,9 @@ import click
 
 from skm.detect import detect_skills
 from skm.git import clone_or_pull, get_head_commit, get_log_between, repo_url_to_dirname
-from skm.linker import link_skill, resolve_target_agents
+from skm.linker import find_ignored_includes, unlink_skill, link_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
-from skm.types import InstalledSkill, SkmConfig
+from skm.types import ResolvedAgent, InstalledSkill, SkmConfig
 from skm.utils import compact_path
 
 
@@ -17,7 +17,7 @@ def run_update(
     config: SkmConfig,
     lock_path: Path,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, ResolvedAgent],
 ) -> None:
     lock = load_lock(lock_path)
 
@@ -61,7 +61,7 @@ def _update_repo(
     config: SkmConfig,
     lock,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, ResolvedAgent],
 ) -> None:
     repo_dir_name = repo_url_to_dirname(repo_url)
     repo_path = store_dir / repo_dir_name
@@ -75,6 +75,10 @@ def _update_repo(
     if repo_config is None:
         click.echo(f"  Error: repo '{repo_url}' not found in config. Cannot determine target agents.")
         raise SystemExit(1)
+
+    ignored = find_ignored_includes(repo_config.agents, known_agents)
+    if ignored:
+        click.secho(f'  Warning: package {repo_url} includes agents not in agents.default, ignored: {", ".join(ignored)}', fg='yellow')
 
     # Get old commit from any skill in this repo
     old_commit = None
@@ -131,9 +135,16 @@ def _update_repo(
             continue
         skill = matching[0]
         linked_paths = []
-        for agent_name, agent_dir in target_agents.items():
-            link, _status = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
+        for agent_name, agent in target_agents.items():
+            link, _status = link_skill(skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode)
             linked_paths.append(compact_path(str(link)))
+
+        for old_path in locked_skill.linked_to:
+            if old_path not in linked_paths:
+                path = Path(old_path).expanduser()
+                if path.is_symlink() or path.is_dir():
+                    unlink_skill(path.name, str(path.parent))
+                    click.secho(f'  Removed stale link {old_path} (agent config changed)', fg='red')
 
         lock.skills[i] = InstalledSkill(
             name=skill.name,

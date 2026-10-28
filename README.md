@@ -82,6 +82,11 @@ agents:
   default:                   # optional: select which agents are active (omit = all)
     - claude
     - standard
+  override:                  # optional: customize built-in agents
+    standard:
+      install_mode: materialize  # symlink or materialize
+    claude:
+      path: ~/custom-claude/skills  # complete skill directory
 
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
@@ -115,6 +120,10 @@ Repo packages are cloned with a sparse checkout: skm runs `git clone --filter=bl
 
 `skills` and `skills_excludes` are mutually exclusive. `skills` installs only the listed skills; `skills_excludes` installs all detected skills except the listed ones. Omitting both installs all detected skills.
 
+`agents.default` selects the active agents; package `includes` / `excludes` only filter that set. Names in `includes` outside that set produce a warning and are ignored. Direct installation offers only the active agents; accepting all keeps the package following future changes to `agents.default`.
+
+`agents.override` can change a built-in agent's `path`, `install_mode`, or both. Omitted values retain their defaults. Unknown agents, empty paths, invalid modes, and misspelled override fields are rejected before installation.
+
 ## Install Sync Behavior
 
 `skm install` treats `skills.yaml` as a declarative state file. Each run syncs the agent directories to match the config:
@@ -123,7 +132,9 @@ Repo packages are cloned with a sparse checkout: skm runs `git clone --filter=bl
 - **Removed skills** (dropped from a package's `skills:` list, or entire package removed) have their links deleted.
 - **Agent config changes** (e.g. adding `excludes: [openclaw]`) remove links from excluded agents while keeping links in others.
 
-Only links tracked in `skills-lock.yaml` are affected. Manually created files or skills installed by other tools in agent directories are never touched.
+Changing an override path moves tracked installs on the next `skm install`. Reinstalling a source also cleans up that source's old locations. `skm update` does this when it pulls a new commit; an already-current repo keeps its existing installs until the next `skm install`.
+
+Only installation paths tracked in `skills-lock.yaml` are affected. Manually created files or skills installed by other tools in agent directories are never touched.
 
 ## Skill Detection
 
@@ -138,14 +149,17 @@ If a package sets `skills_dir`, this default order is bypassed and only that dir
 
 ## Known Agents
 
-Skills are symlinked into these directories by default:
+| Agent | Default skill directory | Config-root environment variable | Default mode |
+|---|---|---|---|
+| `standard` | `~/.agents/skills/` | — | `symlink` |
+| `claude` | `~/.claude/skills/` | `CLAUDE_CONFIG_DIR` | `symlink` |
+| `codex` | `~/.codex/skills/` | `CODEX_HOME` | `symlink` |
+| `openclaw` | `~/.openclaw/skills/` | — | `materialize` |
+| `pi` | `~/.pi/agent/skills/` | `PI_CODING_AGENT_DIR` | `symlink` |
 
-| Agent | Path |
-|---|---|
-| `standard` | `~/.agents/skills/` |
-| `claude` | `~/.claude/skills/` |
-| `codex` | `~/.codex/skills/` |
-| `openclaw` | `~/.openclaw/skills/` |
+Path priority: `--agents-dir` (`<dir>/<agent>`) → `agents.override.<agent>.path` → a non-empty environment variable (`<value>/skills`) → the built-in directory. Paths support `~`. Setting only `install_mode` leaves path selection unchanged.
+
+`skm list` recognizes agents using these same directories, including agents outside `agents.default`; `skm list --all` scans only active agents. If the config cannot be read, list warns and uses the built-in agents (still honoring environment variables and `--agents-dir`).
 
 ## Copy Strategy
 
@@ -159,9 +173,9 @@ If the agent dir holds a copy that an older skm version materialized (every file
 
 ### 2. Hardlink
 
-When `use_hardlink: true` is set for an agent in `AGENT_OPTIONS`, skm creates hardlinks instead. Each file in the skill directory gets its own hardlink pointing to the same inode as the source. This only works when source and target are on the **same filesystem/device**.
+With `install_mode: materialize`, skm prefers hardlinks. Each file in the skill directory gets its own hardlink pointing to the same inode as the source. This only works when source and target are on the **same filesystem/device**.
 
-Only `openclaw` uses this, because OpenClaw skips skill symlinks whose real path is outside its skill root. Hardlinks break when an editor saves a file by replacing it, and new or dot-prefixed files are not carried over, so the copy needs another `skm install` after the source changes.
+Only `openclaw` uses this by default, because OpenClaw skips skill symlinks whose real path is outside its skill root. Hardlinks break when an editor saves a file by replacing it, and new or dot-prefixed files are not carried over, so the copy needs another `skm install` after the source changes.
 
 ### 3. Reflink (copy-on-write)
 
@@ -181,7 +195,7 @@ If reflink is not available (unsupported filesystem, non-Unix platform, etc.), s
 ### Selection flow
 
 ```
-use_hardlink enabled?
+install_mode: materialize?
 ├── No  → symlink
 └── Yes → same device?
     ├── Yes → hardlink

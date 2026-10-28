@@ -3,22 +3,20 @@ from pathlib import Path
 import click
 
 from skm.lock import load_lock
-from skm.types import KNOWN_AGENTS, InstalledSkill
+from skm.types import ResolvedAgent, InstalledSkill
 from skm.utils import compact_path
 
 
-def _agent_name_from_link(link: str) -> str | None:
-    """Derive the agent name from a symlink path by matching against KNOWN_AGENTS."""
-    expanded_link = str(Path(link).expanduser())
-    for name, base in KNOWN_AGENTS.items():
-        expanded = str(Path(base).expanduser())
-        # Match against both expanded and compact (~) forms
-        if expanded_link.startswith(expanded):
+def _agent_name_from_link(link: str, known_agents: dict[str, ResolvedAgent]) -> str | None:
+    """Match the installation's parent directory exactly, without following links."""
+    parent = Path(link).expanduser().parent
+    for name, agent in known_agents.items():
+        if parent == Path(agent.path):
             return name
     return None
 
 
-def _format_skill(skill: InstalledSkill, verbose: bool) -> None:
+def _format_skill(skill: InstalledSkill, known_agents: dict[str, ResolvedAgent], verbose: bool) -> None:
     """Print a single skill entry."""
     click.echo(skill.name)
 
@@ -31,7 +29,7 @@ def _format_skill(skill: InstalledSkill, verbose: bool) -> None:
     # Derive agent names from linked paths
     agents = []
     for link in skill.linked_to:
-        agent = _agent_name_from_link(link)
+        agent = _agent_name_from_link(link, known_agents)
         if agent:
             agents.append(agent)
     if agents:
@@ -43,7 +41,7 @@ def _format_skill(skill: InstalledSkill, verbose: bool) -> None:
             click.echo(click.style(f'  -> {compact_path(link)}', **gray))
 
 
-def run_list(lock_path: Path, verbose: bool = False, skill_name: str | None = None) -> None:
+def run_list(lock_path: Path, known_agents: dict[str, ResolvedAgent], verbose: bool = False, skill_name: str | None = None) -> None:
     lock = load_lock(lock_path)
 
     if not lock.skills:
@@ -56,19 +54,19 @@ def run_list(lock_path: Path, verbose: bool = False, skill_name: str | None = No
             click.echo(f"Skill '{skill_name}' not found.")
             return
         for skill in matched:
-            _format_skill(skill, verbose)
+            _format_skill(skill, known_agents, verbose)
         return
 
     for i, skill in enumerate(lock.skills):
         if i > 0:
             click.echo()
-        _format_skill(skill, verbose)
+        _format_skill(skill, known_agents, verbose)
 
     click.echo()
     click.echo(f'Total skills: {len(lock.skills)}')
 
 
-def run_list_all(lock_path: Path, known_agents: dict[str, str]) -> None:
+def run_list_all(lock_path: Path, known_agents: dict[str, ResolvedAgent]) -> None:
     lock = load_lock(lock_path)
 
     # Build a set of managed symlink paths for quick lookup
@@ -78,7 +76,8 @@ def run_list_all(lock_path: Path, known_agents: dict[str, str]) -> None:
         for link in skill.linked_to:
             managed_links[link] = skill
 
-    for agent_name, agent_dir in sorted(known_agents.items()):
+    for agent_name, agent in sorted(known_agents.items()):
+        agent_dir = agent.path
         agent_path = Path(agent_dir)
         if not agent_path.is_dir():
             continue

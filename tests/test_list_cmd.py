@@ -1,19 +1,15 @@
 from skm.commands import list_cmd
 from skm.lock import save_lock
-from skm.types import InstalledSkill, LockFile
+from skm.types import InstalledSkill, LockFile, ResolvedAgent
 
 
 def test_run_list_shows_agents_from_compact_lock_paths(monkeypatch, tmp_path, capsys):
     home = tmp_path / 'home'
     monkeypatch.setenv('HOME', str(home))
-    monkeypatch.setattr(
-        list_cmd,
-        'KNOWN_AGENTS',
-        {
-            'standard': '~/.agents/skills',
-            'claude': str((home / '.config' / 'claude' / 'skills').resolve()),
-        },
-    )
+    agents = {
+        'standard': ResolvedAgent(path=str(home / '.agents/skills')),
+        'claude': ResolvedAgent(path=str(home / '.config/claude/skills')),
+    }
 
     lock_path = tmp_path / 'skills-lock.yaml'
     save_lock(
@@ -34,7 +30,7 @@ def test_run_list_shows_agents_from_compact_lock_paths(monkeypatch, tmp_path, ca
         lock_path,
     )
 
-    list_cmd.run_list(lock_path)
+    list_cmd.run_list(lock_path, agents)
 
     output = capsys.readouterr().out
     assert 'my-skill' in output

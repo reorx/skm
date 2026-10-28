@@ -14,6 +14,7 @@ A CLI tool that manages AI agent skills by cloning GitHub repos, detecting skill
 src/skm/
 ├── cli.py              # Click CLI entry point (group + subcommands)
 ├── types.py            # Pydantic data models + constants
+├── agents.py           # Runtime agent path/mode resolution shared by install, update, list
 ├── config.py           # Load skills.yaml → SkmConfig
 ├── lock.py             # Read/write skills-lock.yaml
 ├── detect.py           # Walk cloned repos for SKILL.md files; select_skill_dirs() applies the same rules to a git tree listing
@@ -38,7 +39,7 @@ tests/
 
 ## Key Paths
 
-- **Config:** `~/.config/skm/skills.yaml` — YAML dict with `packages` (repo list) and optional `agents.default`
+- **Config:** `~/.config/skm/skills.yaml` — YAML dict with `packages` (repo list) and optional `agents.default` / `agents.override`
 - **Lock:** `~/.config/skm/skills-lock.yaml` — tracks installed skills, commits, symlink paths
 - **Store:** `~/.local/share/skm/skills/` — cloned repos cached here
 - **Agent dirs:** Skills are symlinked into each agent's skill directory (e.g. `~/.claude/skills/`, `~/.codex/skills/`)
@@ -74,9 +75,14 @@ Top-level YAML dict with `packages` and optional `agents`:
 
 ```yaml
 agents:
-  default:                   # optional: select which KNOWN_AGENTS are active (omit = all)
+  default:                   # optional: select which BUILTIN_AGENTS are active (omit = all)
     - claude
     - standard
+  override:
+    standard:
+      install_mode: materialize
+    claude:
+      path: ~/custom-claude/skills
 
 packages:
   - repo: https://github.com/vercel-labs/agent-skills
@@ -91,7 +97,7 @@ packages:
   - repo: https://github.com/blader/humanizer   # installs all detected skills to default agents
 ```
 
-`agents.default` selects which agents from `KNOWN_AGENTS` are used as the base set. Per-package `agents.includes/excludes` then filters from that base set.
+`agents.default` selects which agents from `BUILTIN_AGENTS` are used as the base set. Per-package `agents.includes/excludes` then filters from that base set.
 
 ## Skill Detection
 
@@ -105,14 +111,16 @@ During traversal, `.git` and directories whose names start with `_` are skipped.
 
 ## Known Agents
 
-Defined in `src/skm/types.py` as `KNOWN_AGENTS`:
+Defined in `src/skm/types.py` as `BUILTIN_AGENTS`:
 - `standard` → `~/.agents/skills`
 - `claude` → `~/.claude/skills`
 - `codex` → `~/.codex/skills`
 - `openclaw` → `~/.openclaw/skills`
 - `pi` → `~/.pi/agent/skills`
 
-All agents get symlinks except `openclaw`, which `AGENT_OPTIONS` sets to `use_hardlink` because OpenClaw skips symlinks that resolve outside its skill roots. `standard` used hardlinks until 2026-10-23, since OpenClaw also reads `~/.agents/skills`. Codex (0.164) and Hermes (0.22) were tested and load symlinked skills there. In symlink mode `link_skill()` swaps a leftover materialized copy for a symlink when `_is_managed_materialized_dir()` says nothing in it differs from the source.
+`BUILTIN_AGENTS` stores `AgentSpec` definitions; `agents.resolve_agents()` returns runtime `ResolvedAgent` paths and modes. Priority: `--agents-dir` → override path → non-empty agent environment variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`, each with `/skills`) → built-in path. Only openclaw defaults to `materialize`; other agents default to `symlink`, and `agents.override` can change either field for built-in names only.
+
+Pass resolved agents into install/update/list; linker receives only the path and `install_mode`. List compares exact parent directories and falls back with a warning on unreadable config; normal list recognizes all built-ins, while `--all` scans defaults. Install, direct package reinstall, and updates with new commits clean tracked obsolete paths; unchanged updates retain old installs and lock paths.
 
 ## Testing
 
@@ -149,7 +157,7 @@ skm --config /tmp/test.yaml \
 - `--config` — path to `skills.yaml` (default: `~/.config/skm/skills.yaml`)
 - `--lock` — path to `skills-lock.yaml` (default: `~/.config/skm/skills-lock.yaml`)
 - `--store` — directory for cloned repos (default: `~/.local/share/skm/skills/`)
-- `--agents-dir` — base directory for agent symlinks; creates subdirs per agent name (overrides `KNOWN_AGENTS` paths)
+- `--agents-dir` — base directory for agent symlinks; creates subdirs per agent name (overrides `BUILTIN_AGENTS` paths)
 
 ### E2E Test Helpers
 

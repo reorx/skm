@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import click
+from ruamel.yaml.error import YAMLError
+
+from skm.agents import resolve_agents
 
 
 class AliasGroup(click.Group):
@@ -23,7 +26,7 @@ from skm.types import (
     CONFIG_PATH,
     LOCK_PATH,
     STORE_DIR,
-    KNOWN_AGENTS,
+    ResolvedAgent,
     AgentsConfig,
     SkillRepoConfig,
     SkmConfig,
@@ -39,7 +42,7 @@ from skm.types import (
     'agents_dir',
     type=click.Path(),
     default=None,
-    help='Base directory for agent skill symlinks (overrides all known agents).',
+    help='Base directory for agent skill installs (overrides all known agents).',
 )
 @click.pass_context
 def cli(ctx, config_path, store_dir, lock_path, agents_dir):
@@ -51,14 +54,22 @@ def cli(ctx, config_path, store_dir, lock_path, agents_dir):
     ctx.obj['agents_dir'] = agents_dir
 
 
-def _expand_agents(agents_dir: str | None = None, default_agents: list[str] | None = None) -> dict[str, str]:
-    agents = KNOWN_AGENTS
-    if default_agents is not None:
-        agents = {k: v for k, v in agents.items() if k in default_agents}
-    if agents_dir:
-        base = Path(agents_dir)
-        return {name: str(base / name) for name in agents}
-    return {name: str(Path(path).expanduser()) for name, path in agents.items()}
+def _load_config(config_path: Path) -> SkmConfig:
+    try:
+        return load_config(config_path)
+    except (ValueError, YAMLError, OSError) as e:
+        raise click.ClickException(f'Invalid config {config_path}:\n{e}') from e
+
+
+def _resolve_list_agents(config_path: Path, agents_dir: str | None, default_only: bool) -> dict[str, ResolvedAgent]:
+    config = None
+    if config_path.exists():
+        try:
+            config = load_config(config_path)
+        except (ValueError, YAMLError, OSError) as e:
+            reason = ' '.join(str(e).split())
+            click.secho(f'Warning: failed to load config, using built-in agents: {reason}', fg='yellow')
+    return resolve_agents(config.agents if config else None, agents_dir, default_only=default_only)
 
 
 @cli.command()
@@ -84,9 +95,8 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
 
     if source is None:
         # Existing behavior: install from config
-        config = load_config(ctx.obj['config_path'])
-        default_agents = config.agents.default if config.agents else None
-        agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
+        config = _load_config(ctx.obj['config_path'])
+        agents = resolve_agents(config.agents, ctx.obj['agents_dir'])
         run_install(
             config=config,
             lock_path=ctx.obj['lock_path'],
@@ -102,6 +112,15 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
     if agents_includes and agents_excludes:
         raise click.ClickException('Cannot specify both --agents-includes and --agents-excludes')
 
+    # Load or create config
+    config_path = ctx.obj['config_path']
+    if config_path.exists():
+        config = _load_config(config_path)
+    else:
+        config = SkmConfig(packages=[])
+
+    default_agents = resolve_agents(config.agents, ctx.obj['agents_dir'])
+
     # Resolve source
     source_path = Path(source).expanduser()
     if source_path.is_dir():
@@ -112,13 +131,6 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
         clone_or_pull(source, dest)
         repo_path = dest
         is_local = False
-
-    # Load or create config
-    config_path = ctx.obj['config_path']
-    if config_path.exists():
-        config = load_config(config_path)
-    else:
-        config = SkmConfig(packages=[])
 
     # Check if existing package with skills: None and specific skill_name
     if skill_name:
@@ -136,13 +148,11 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
                 return
             else:
                 # Re-install just this package to pick up new skills
-                default_agents = config.agents.default if config.agents else None
-                agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
                 run_install_package(
                     repo_config=existing_pkg,
                     lock_path=ctx.obj['lock_path'],
                     store_dir=ctx.obj['store_dir'],
-                    known_agents=agents,
+                    known_agents=default_agents,
                     force=force,
                     verbose=verbose,
                 )
@@ -191,15 +201,8 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
         # Repo already in config, keep existing agents setting
         agents_config = existing_pkg.agents
     else:
-        agent_names = list(KNOWN_AGENTS.keys())
-        # Pre-select based on config default
-        default_agents_list = config.agents.default if config.agents else None
-        if default_agents_list:
-            preselected = {i for i, name in enumerate(agent_names) if name in default_agents_list}
-        else:
-            preselected = None  # all selected
-
-        agent_indices = interactive_multi_select(agent_names, header='Select agents:', preselected=preselected)
+        agent_names = list(default_agents)
+        agent_indices = interactive_multi_select(agent_names, header='Select agents:', preselected=None)
         if agent_indices is None:
             click.echo('Cancelled.')
             return
@@ -234,13 +237,11 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
     pkg_to_install = _find_package_by_source(config, new_pkg.source_key, is_local) or new_pkg
 
     # Install just this package
-    default_agents = config.agents.default if config.agents else None
-    agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
     run_install_package(
         repo_config=pkg_to_install,
         lock_path=ctx.obj['lock_path'],
         store_dir=ctx.obj['store_dir'],
-        known_agents=agents,
+        known_agents=default_agents,
         force=force,
         verbose=verbose,
     )
@@ -304,9 +305,8 @@ def update(ctx, skill_names: tuple[str, ...], update_all: bool):
     if not skill_names and not update_all:
         raise click.UsageError("Provide skill name(s) or use --all.")
 
-    config = load_config(ctx.obj['config_path'])
-    default_agents = config.agents.default if config.agents else None
-    agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
+    config = _load_config(ctx.obj['config_path'])
+    agents = resolve_agents(config.agents, ctx.obj['agents_dir'])
     run_update(
         skill_names=skill_names,
         update_all=update_all,
@@ -390,10 +390,8 @@ def list_skills(ctx, skill_name: str | None, show_all: bool, verbose: bool):
     """List installed skills and their linked paths."""
     from skm.commands.list_cmd import run_list, run_list_all
 
+    agents = _resolve_list_agents(ctx.obj['config_path'], ctx.obj['agents_dir'], default_only=show_all)
     if show_all:
-        config = load_config(ctx.obj['config_path'])
-        default_agents = config.agents.default if config.agents else None
-        agents = _expand_agents(ctx.obj['agents_dir'], default_agents)
         run_list_all(ctx.obj['lock_path'], agents)
     else:
-        run_list(ctx.obj['lock_path'], verbose=verbose, skill_name=skill_name)
+        run_list(ctx.obj['lock_path'], agents, verbose=verbose, skill_name=skill_name)

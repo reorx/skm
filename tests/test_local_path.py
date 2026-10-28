@@ -1,3 +1,4 @@
+from skm.types import ResolvedAgent
 """BDD tests for local_path package support."""
 import pytest
 from pathlib import Path
@@ -74,7 +75,7 @@ def test_install_local_path(tmp_path):
 
     lock_path = tmp_path / "config" / "skills-lock.yaml"
     store_dir = tmp_path / "store"
-    agents = {"claude": str(tmp_path / "agents" / "claude" / "skills")}
+    agents = {"claude": ResolvedAgent(path=str(tmp_path / "agents" / "claude" / "skills"))}
 
     config = load_config(config_path)
     run_install(config=config, lock_path=lock_path, store_dir=store_dir, known_agents=agents)
@@ -101,7 +102,7 @@ def test_install_local_path_no_clone(tmp_path):
 
     lock_path = tmp_path / "config" / "skills-lock.yaml"
     store_dir = tmp_path / "store"
-    agents = {"claude": str(tmp_path / "agents" / "claude" / "skills")}
+    agents = {"claude": ResolvedAgent(path=str(tmp_path / "agents" / "claude" / "skills"))}
 
     config = load_config(config_path)
     run_install(config=config, lock_path=lock_path, store_dir=store_dir, known_agents=agents)
@@ -122,7 +123,7 @@ def test_install_local_path_with_skill_filter(tmp_path):
 
     lock_path = tmp_path / "config" / "skills-lock.yaml"
     store_dir = tmp_path / "store"
-    agents = {"claude": str(tmp_path / "agents" / "claude" / "skills")}
+    agents = {"claude": ResolvedAgent(path=str(tmp_path / "agents" / "claude" / "skills"))}
 
     config = load_config(config_path)
     run_install(config=config, lock_path=lock_path, store_dir=store_dir, known_agents=agents)
@@ -146,7 +147,7 @@ def test_lock_local_path_fields(tmp_path):
 
     lock_path = tmp_path / "config" / "skills-lock.yaml"
     store_dir = tmp_path / "store"
-    agents = {"claude": str(tmp_path / "agents" / "claude" / "skills")}
+    agents = {"claude": ResolvedAgent(path=str(tmp_path / "agents" / "claude" / "skills"))}
 
     config = load_config(config_path)
     run_install(config=config, lock_path=lock_path, store_dir=store_dir, known_agents=agents)
@@ -207,7 +208,7 @@ def test_update_skips_local_path(tmp_path, capsys):
 
     config = load_config(config_path)
     store_dir = tmp_path / "store"
-    agents = {"claude": str(tmp_path / "agents" / "claude" / "skills")}
+    agents = {"claude": ResolvedAgent(path=str(tmp_path / "agents" / "claude" / "skills"))}
 
     run_update(("my-skill",), False, config, lock_path, store_dir, agents)
 

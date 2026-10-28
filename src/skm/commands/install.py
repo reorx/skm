@@ -6,9 +6,9 @@ import click
 
 from skm.detect import detect_skills
 from skm.git import clone_or_pull, get_head_commit, repo_url_to_dirname
-from skm.linker import link_skill, unlink_skill, resolve_target_agents
+from skm.linker import find_ignored_includes, link_skill, unlink_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
-from skm.types import InstalledSkill, LockFile, SkillRepoConfig, SkmConfig
+from skm.types import ResolvedAgent, InstalledSkill, LockFile, SkillRepoConfig, SkmConfig
 from skm.utils import compact_path
 
 
@@ -83,7 +83,7 @@ def run_install(
     config: SkmConfig,
     lock_path: Path,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, ResolvedAgent],
     force: bool = False,
     verbose: bool = False,
 ) -> None:
@@ -126,6 +126,27 @@ def run_install(
         for line in all_deferred_lines:
             click.echo(line)
 
+    removed_count = _remove_stale_links(lock.skills, new_lock_skills, configured_skill_keys)
+
+    # Summary line
+    if not verbose:
+        if added_count == 0 and removed_count == 0:
+            click.echo('up to date')
+        else:
+            parts = []
+            if added_count > 0:
+                parts.append(f'added {added_count} skill{"s" if added_count != 1 else ""}')
+            if removed_count > 0:
+                parts.append(f'removed {removed_count} skill{"s" if removed_count != 1 else ""}')
+            click.echo()
+            click.echo(', '.join(parts))
+
+    new_lock = LockFile(skills=new_lock_skills)
+    save_lock(new_lock, lock_path)
+    click.echo(f'Lock file updated: {lock_path}')
+
+
+def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys) -> int:
     # Build set of all new linked paths for comparison
     new_linked_paths: set[str] = set()
     for skill in new_lock_skills:
@@ -135,7 +156,7 @@ def run_install(
     # Remove stale links: any old linked_to path not present in new state
     stale_header_printed = False
     removed_count = 0
-    for old_skill in lock.skills:
+    for old_skill in old_skills:
         old_source = old_skill.repo or old_skill.local_path or ''
         skill_still_configured = (old_skill.name, old_source) in configured_skill_keys
 
@@ -160,22 +181,7 @@ def run_install(
                     )
                     removed_count += 1
 
-    # Summary line
-    if not verbose:
-        if added_count == 0 and removed_count == 0:
-            click.echo('up to date')
-        else:
-            parts = []
-            if added_count > 0:
-                parts.append(f'added {added_count} skill{"s" if added_count != 1 else ""}')
-            if removed_count > 0:
-                parts.append(f'removed {removed_count} skill{"s" if removed_count != 1 else ""}')
-            click.echo()
-            click.echo(', '.join(parts))
-
-    new_lock = LockFile(skills=new_lock_skills)
-    save_lock(new_lock, lock_path)
-    click.echo(f'Lock file updated: {lock_path}')
+    return removed_count
 
 
 def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_agents, force=False, verbose=False):
@@ -194,6 +200,12 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
         click.echo(click.style(f'  Found skills: {", ".join(s.name for s in detected) or "(none)"}', dim=True))
 
     target_agents = resolve_target_agents(repo_config.agents, known_agents)
+    ignored = find_ignored_includes(repo_config.agents, known_agents)
+    if ignored:
+        if not verbose:
+            _clear_progress()
+        source = compact_path(repo_config.source_key)
+        click.secho(f'  Warning: package {source} includes agents not in agents.default, ignored: {", ".join(ignored)}', fg='yellow')
 
     if repo_config.skills is not None:
         requested = set(repo_config.skills)
@@ -224,14 +236,14 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
         if verbose:
             click.echo(click.style(f'  Install skill {skill.name}', fg='yellow'))
 
-        for agent_name, agent_dir in target_agents.items():
+        for agent_name, agent in target_agents.items():
             try:
-                link, status = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
+                link, status = link_skill(skill.path, skill.name, agent.path, install_mode=agent.install_mode)
             except FileExistsError as e:
                 if force or _confirm_override(f'  {e}. Override?'):
                     if verbose:
                         click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link, status = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
+                    link, status = link_skill(skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode)
                 else:
                     if verbose:
                         click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
@@ -292,6 +304,12 @@ def _install_repo(
         click.echo(click.style(f'  Found skills: {", ".join(s.name for s in detected) or "(none)"}', dim=True))
 
     target_agents = resolve_target_agents(repo_config.agents, known_agents)
+    ignored = find_ignored_includes(repo_config.agents, known_agents)
+    if ignored:
+        if not verbose:
+            _clear_progress()
+        source = compact_path(repo_config.source_key)
+        click.secho(f'  Warning: package {source} includes agents not in agents.default, ignored: {", ".join(ignored)}', fg='yellow')
 
     if repo_config.skills is not None:
         requested = set(repo_config.skills)
@@ -340,14 +358,14 @@ def _install_repo(
         if verbose:
             click.echo(click.style(f'  Install skill {skill.name}', fg='yellow'))
 
-        for agent_name, agent_dir in target_agents.items():
+        for agent_name, agent in target_agents.items():
             try:
-                link, status = link_skill(skill.path, skill.name, agent_dir, agent_name=agent_name)
+                link, status = link_skill(skill.path, skill.name, agent.path, install_mode=agent.install_mode)
             except FileExistsError as e:
                 if force or _confirm_override(f'  {e}. Override?'):
                     if verbose:
                         click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link, status = link_skill(skill.path, skill.name, agent_dir, force=True, agent_name=agent_name)
+                    link, status = link_skill(skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode)
                 else:
                     if verbose:
                         click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
@@ -385,7 +403,7 @@ def run_install_package(
     repo_config: SkillRepoConfig,
     lock_path: Path,
     store_dir: Path,
-    known_agents: dict[str, str],
+    known_agents: dict[str, ResolvedAgent],
     force: bool = False,
     verbose: bool = False,
 ) -> None:
@@ -413,18 +431,10 @@ def run_install_package(
         for line in deferred_lines:
             click.echo(line)
 
-    if verbose:
-        click.echo()
-    else:
-        if added_count == 0:
-            click.echo('up to date')
-        else:
-            click.echo()
-            click.echo(f'added {added_count} skill{"s" if added_count != 1 else ""}')
-
     # Merge: keep existing lock entries from other sources, replace entries from this source
     source_key = repo_config.source_key
     merged_skills = []
+    replaced = []
     for existing in lock.skills:
         existing_source = existing.repo or existing.local_path or ''
         # Keep entries not from this source
@@ -436,7 +446,17 @@ def run_install_package(
                 and str(Path(existing.local_path).expanduser()) == str(Path(source_key).expanduser())
             ):
                 merged_skills.append(existing)
+                continue
+        replaced.append(existing)
     merged_skills.extend(new_lock_skills)
+    removed_count = _remove_stale_links(replaced, merged_skills, configured_skill_keys)
+    if not verbose:
+        parts = []
+        if added_count:
+            parts.append(f'added {added_count} skill{"s" if added_count != 1 else ""}')
+        if removed_count:
+            parts.append(f'removed {removed_count} skill{"s" if removed_count != 1 else ""}')
+        click.echo(', '.join(parts) if parts else 'up to date')
 
     new_lock = LockFile(skills=merged_skills)
     save_lock(new_lock, lock_path)
