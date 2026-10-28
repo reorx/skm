@@ -6,7 +6,13 @@
 
 - 记录：2026-10-23，见 [PR 需求调研](notes/2026-10-23-github-pr-requirements-research.md)。
 - `src/skm/commands/list_cmd.py` 的 `_agent_name_from_link` 使用字符串 `startswith` 判断归属。例如 lock 路径 `~/.agents/skills-extra/demo` 会匹配内置 `standard` 的 `~/.agents/skills`，导致列表显示错误 agent；自定义 agent 目录与另一个目录共享前缀时可触发。
-- 已通过当前代码静态确认，尚未执行独立复现测试。开放的 [PR #7](https://github.com/reorx/skm/pull/7) 提供父目录精确比较及回归测试，尚未合入。处理时应先补充失败测试，再修复判断。
+- 2026-10-28 已实测复现：`_agent_name_from_link('~/.agents/skills-extra/demo')` 返回 `standard`，`'~/.claude/skills2/x'` 返回 `claude`。另外不带 `--all` 的 `skm list` 用的是全局 `KNOWN_AGENTS`，不认 `--agents-dir`。开放的 [PR #7](https://github.com/reorx/skm/pull/7) 改为比较父目录是否相等，并附回归测试，尚未合入。处理时应先补失败测试，再改判断。
+
+## 直接安装：agent 选择器列出 default 以外的 agent，勾了不生效，还会把 includes 写死进配置
+
+- 记录：2026-10-28，对照 [PR #7](https://github.com/reorx/skm/pull/7) 时发现；复现脚本 `tmp/2026-10-28-pr-priority/repro_agent_picker.py`。
+- 在 `agents.default: [claude, standard]` 下执行 `skm install <source>`，选择器会列出全部 5 个 agent。勾上 openclaw 后，配置里写入 `includes: [standard, claude, openclaw]`，退出码为 0，但 openclaw 里没有装任何东西，因为安装只在 default 范围内过滤。如果直接接受预选，配置会写入 `includes: [standard, claude]`，之后往 `agents.default` 里加 agent，这个包也不会跟着装。
+- 处理方向：选择器只列 default 范围内的 agent，全选时不写 `agents`。PR #7 的做法就是这样。
 
 ## openclaw：源文件被替换式保存后硬链副本变旧，install 卡在覆盖确认
 
