@@ -360,3 +360,25 @@ def test_declined_override_alias_preserves_user_directory(tmp_path, monkeypatch,
     assert (target / 'notes.txt').read_text() == 'user content'
     assert _load_lock(tmp_path)['skills'][0]['linked_to'] == []
     assert 'Removing stale links' not in output
+
+
+def test_home_prefix_sibling_install_list_and_cleanup(tmp_path, monkeypatch):
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    for name in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR'):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr('skm.cli.interactive_multi_select', lambda *a, **kw: [0])
+    monkeypatch.setattr('skm.commands.install._confirm_override', lambda *a, **kw: False)
+    repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
+    old = tmp_path / 'home2/skills'
+    new = tmp_path / 'home/new-skills'
+    packages = [{'local_path': str(repo)}]
+    _write_config(tmp_path, packages, {'default': ['claude'], 'override': {'claude': {'path': str(old)}}})
+    invoke(tmp_path, 'install', isolated=False)
+    assert _load_lock(tmp_path)['skills'][0]['linked_to'] == [str(old / 'demo')]
+    assert 'claude' in invoke(tmp_path, 'list', isolated=False)
+    _write_config(tmp_path, packages, {'default': ['claude'], 'override': {'claude': {'path': str(new)}}})
+    invoke(tmp_path, 'install', isolated=False)
+    assert not (old / 'demo').is_symlink()
+    assert not (old / 'demo').exists()
+    assert (new / 'demo/SKILL.md').is_file()
+    assert _load_lock(tmp_path)['skills'][0]['linked_to'] == ['~/new-skills/demo']

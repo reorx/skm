@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -18,8 +19,8 @@ def same_install_location(left: str, right: str) -> bool:
 
 
 def compact_path(p: str) -> str:
-    """Replace the user's home directory prefix with ~."""
+    """Replace the user's home directory with ~ only at a path boundary."""
     home = str(Path.home())
-    if p.startswith(home):
+    if p == home or p.startswith(home + os.sep):
         return '~' + p[len(home) :]
     return p
