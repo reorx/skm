@@ -122,7 +122,7 @@ Repo packages are cloned with a sparse checkout: skm runs `git clone --filter=bl
 
 `agents.default` selects the active agents; package `includes` / `excludes` only filter that set. Names in `includes` outside that set produce a warning and are ignored. Direct installation offers only the active agents; accepting all keeps the package following future changes to `agents.default`.
 
-`agents.override` can change a built-in agent's `path`, `install_mode`, or both. Omitted values retain their defaults. Unknown agents, empty paths, invalid modes, and misspelled override fields are rejected before installation.
+`agents.override` can change a built-in agent's `path`, `install_mode`, or both. Override paths must be absolute or start with `~` and expand to an absolute path. Omitted values retain their defaults. Unknown agents, empty or relative paths, invalid modes, and misspelled override fields are rejected before installation.
 
 ## Install Sync Behavior
 
@@ -159,7 +159,7 @@ If a package sets `skills_dir`, this default order is bypassed and only that dir
 | `openclaw` | `~/.openclaw/skills/` | — | `materialize` |
 | `pi` | `~/.pi/agent/skills/` | `PI_CODING_AGENT_DIR` | `symlink` |
 
-Path priority: `--agents-dir` (`<dir>/<agent>`) → `agents.override.<agent>.path` → a non-empty environment variable (`<value>/skills`) → the built-in directory. Paths support `~`. Setting only `install_mode` leaves path selection unchanged.
+Path priority: `--agents-dir` (`<dir>/<agent>`) → `agents.override.<agent>.path` → a non-empty environment variable (`<value>/skills`) → the built-in directory. Paths support `~`; override paths must be absolute or start with `~` and expand to an absolute path (for example, `~/custom-claude/skills`). Setting only `install_mode` leaves path selection unchanged.
 
 `skm list` recognizes agents using these same directories, including agents outside `agents.default`; `skm list --all` scans only active agents. If the config cannot be read, list warns and uses the built-in agents (still honoring environment variables and `--agents-dir`).
 

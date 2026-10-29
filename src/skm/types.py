@@ -27,6 +27,8 @@ class AgentOverride(BaseModel):
     def check_path(cls, value: str | None) -> str | None:
         if value is not None and not value.strip():
             raise ValueError("'path' cannot be empty")
+        if value is not None and not Path(value).expanduser().is_absolute():
+            raise ValueError("'path' must be an absolute path or ~/...")
         return value
 
 

@@ -25,15 +25,26 @@ def invoke(tmp_path, *args, isolated=True):
         {'claude': {'install_mode': 'copy'}},
         {'claude': {'path': ''}},
         {'claude': {'path': '  '}},
+        {'claude': {'path': 'rel-skills'}},
+        {'claude': {'path': './x'}},
+        {'claude': {'path': '../x'}},
         {'claude': {'mode': 'symlink'}},
     ],
 )
-def test_invalid_override_has_no_install_side_effects(tmp_path, override):
-    _write_config(tmp_path, [], {'override': override})
+def test_invalid_override_has_no_install_side_effects(tmp_path, monkeypatch, override):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    for name in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR'):
+        monkeypatch.delenv(name, raising=False)
+    repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
+    _write_config(tmp_path, [{'repo': str(repo)}], {'override': override})
     result = CliRunner().invoke(cli, [*_cli_args(tmp_path), 'install'])
     assert result.exit_code != 0
     assert 'Invalid config' in result.output
     assert not (tmp_path / 'agents').exists()
+    assert not (tmp_path / 'store').exists()
+    assert not (tmp_path / 'home').exists()
+    assert not (tmp_path / 'config/skills-lock.yaml').exists()
 
 
 @pytest.mark.parametrize(
@@ -285,10 +296,14 @@ def test_override_alias_preserves_install(tmp_path, monkeypatch, command, mode, 
     packages = [{'repo' if command == 'update' else 'local_path': str(repo)}]
 
     def config_at(path):
-        _write_config(tmp_path, packages, {
-            'default': ['claude'],
-            'override': {'claude': {'path': path, 'install_mode': mode}},
-        })
+        _write_config(
+            tmp_path,
+            packages,
+            {
+                'default': ['claude'],
+                'override': {'claude': {'path': path, 'install_mode': mode}},
+            },
+        )
 
     monkeypatch.setattr('skm.commands.install._confirm_override', lambda message: False)
     monkeypatch.setattr('skm.cli.interactive_multi_select', lambda items, **kwargs: list(range(len(items))))
@@ -305,7 +320,9 @@ def test_override_alias_preserves_install(tmp_path, monkeypatch, command, mode, 
         (repo / 'skills/demo/new.txt').write_text('updated content')
         subprocess.run(['git', 'add', '.'], cwd=repo, check=True, capture_output=True)
         subprocess.run(['git', 'commit', '-m', 'change'], cwd=repo, check=True, capture_output=True)
-    args = ('install', str(repo)) if command == 'direct' else ('update', 'demo') if command == 'update' else ('install',)
+    args = (
+        ('install', str(repo)) if command == 'direct' else ('update', 'demo') if command == 'update' else ('install',)
+    )
     output = invoke(tmp_path, *args, isolated=False)
     target = tmp_path / new_name / 'demo'
     assert (target / 'SKILL.md').is_file(), output

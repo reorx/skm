@@ -1,7 +1,23 @@
 import pytest
 from pathlib import Path
+from pydantic import ValidationError
 from skm.config import load_config, save_config, upsert_package, _raw_cache
-from skm.types import SkillRepoConfig
+from skm.types import SkillRepoConfig, SkmConfig
+
+
+@pytest.mark.parametrize('path', ['rel-skills', './x', '../x'])
+def test_override_rejects_relative_path(path):
+    with pytest.raises(ValidationError) as exc_info:
+        SkmConfig(packages=[], agents={'override': {'claude': {'path': path}}})
+    assert exc_info.value.errors()[0]['loc'] == ('agents', 'override', 'claude', 'path')
+    assert 'absolute path or ~/...' in str(exc_info.value)
+
+
+@pytest.mark.parametrize('path', ['/absolute/skills', '~/x'])
+def test_override_accepts_absolute_or_home_path(tmp_path, monkeypatch, path):
+    monkeypatch.setenv('HOME', str(tmp_path))
+    config = SkmConfig(packages=[], agents={'override': {'claude': {'path': path}}})
+    assert config.agents.override['claude'].path == path
 
 
 EXAMPLE_YAML = """\
