@@ -267,3 +267,23 @@ def test_install_uses_env_override_path_in_lock(tmp_path, monkeypatch):
 
     lock = load_lock(lock_path)
     assert lock.skills[0].linked_to == ['~/.config/claude/skills/my-skill']
+
+
+def test_stale_cleanup_exact_matches_skip_alias_comparisons(tmp_path, monkeypatch):
+    from skm.commands.install import _remove_stale_links
+    from skm.types import InstalledSkill
+
+    active = tmp_path / 'active/demo'
+    declined = tmp_path / 'declined/demo'
+    for path in (active, declined):
+        path.mkdir(parents=True)
+    old = InstalledSkill(name='demo', skill_path='demo', linked_to=[str(active), str(declined)])
+    new = old.model_copy(update={'linked_to': [str(active)]})
+
+    def unexpected_alias_comparison(*args):
+        raise AssertionError('Exact path matches must not scan filesystem aliases')
+
+    monkeypatch.setattr('skm.commands.install.same_install_location', unexpected_alias_comparison)
+    assert _remove_stale_links([old], [new], {('demo', '')}, {str(declined)}) == 0
+    assert active.is_dir()
+    assert declined.is_dir()

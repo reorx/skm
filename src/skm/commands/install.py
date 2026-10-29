@@ -169,6 +169,9 @@ def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys, skip
         skill_still_configured = (old_skill.name, old_source) in configured_skill_keys
 
         for link_path_str in old_skill.linked_to:
+            # Unchanged installs and declined targets need no filesystem comparison.
+            if link_path_str in new_linked_paths or link_path_str in skipped_paths:
+                continue
             # Declined targets belong to the user now; neither remove nor track them.
             if any(same_install_location(link_path_str, skipped) for skipped in skipped_paths):
                 continue
