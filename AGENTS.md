@@ -193,3 +193,7 @@ uv run skm --help     # run CLI
 ```
 
 Do not run formatters or style linters on the code.
+
+## Publishing
+
+The PyPI package is `skm-cli`. Use `uv version --bump minor` (or the appropriate bump) to update both `pyproject.toml` and `uv.lock`; run the test suite and build with `uv build --out-dir tmp/<date>-release-<version>/dist`. Publish only that version's wheel and sdist with `uv publish <wheel> <sdist>` to avoid uploading old artifacts, then push the release commit and its `v<version>` tag.
