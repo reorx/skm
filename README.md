@@ -136,6 +136,8 @@ Changing an override path moves tracked installs on the next `skm install`. Rein
 
 Only installation paths tracked in `skills-lock.yaml` are affected. Manually created files or skills installed by other tools in agent directories are never touched.
 
+If you decline an overwrite during `skm install` or `skm install <source>`, that target is preserved and removed from lock tracking. Later cleanup leaves it alone.
+
 ## Skill Detection
 
 A skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name` field required). Detection order:

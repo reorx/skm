@@ -89,6 +89,7 @@ def run_install(
 ) -> None:
     lock = load_lock(lock_path)
     new_lock_skills: list[InstalledSkill] = []
+    skipped_paths: set[str] = set()
 
     # Track which skills are configured (for removal detection)
     # Key: (skill_name, source_key)
@@ -101,11 +102,18 @@ def run_install(
         for repo_config in config.packages:
             if repo_config.is_local:
                 count, lines = _install_local(
-                    repo_config, new_lock_skills, configured_skill_keys, known_agents, force, verbose
+                    repo_config, new_lock_skills, configured_skill_keys, known_agents, skipped_paths, force, verbose
                 )
             else:
                 count, lines = _install_repo(
-                    repo_config, store_dir, new_lock_skills, configured_skill_keys, known_agents, force, verbose
+                    repo_config,
+                    store_dir,
+                    new_lock_skills,
+                    configured_skill_keys,
+                    known_agents,
+                    skipped_paths,
+                    force,
+                    verbose,
                 )
 
             added_count += count
@@ -126,7 +134,7 @@ def run_install(
         for line in all_deferred_lines:
             click.echo(line)
 
-    removed_count = _remove_stale_links(lock.skills, new_lock_skills, configured_skill_keys)
+    removed_count = _remove_stale_links(lock.skills, new_lock_skills, configured_skill_keys, skipped_paths)
 
     # Summary line
     if not verbose:
@@ -146,7 +154,7 @@ def run_install(
     click.echo(f'Lock file updated: {lock_path}')
 
 
-def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys) -> int:
+def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys, skipped_paths) -> int:
     # Build set of all new linked paths for comparison
     new_linked_paths: set[str] = set()
     for skill in new_lock_skills:
@@ -161,6 +169,9 @@ def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys) -> i
         skill_still_configured = (old_skill.name, old_source) in configured_skill_keys
 
         for link_path_str in old_skill.linked_to:
+            # Declined targets belong to the user now; neither remove nor track them.
+            if link_path_str in skipped_paths:
+                continue
             if link_path_str not in new_linked_paths:
                 p = Path(link_path_str).expanduser()
                 if skill_still_configured:
@@ -184,7 +195,9 @@ def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys) -> i
     return removed_count
 
 
-def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_agents, force=False, verbose=False):
+def _install_local(
+    repo_config, new_lock_skills, configured_skill_keys, known_agents, skipped_paths, force=False, verbose=False
+):
     """Install skills from a local path. Returns (added_count, deferred_lines)."""
     local_path = Path(repo_config.local_path).expanduser()
     source_label = compact_path(str(local_path))
@@ -205,7 +218,10 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
         if not verbose:
             _clear_progress()
         source = compact_path(repo_config.source_key)
-        click.secho(f'  Warning: package {source} includes agents not in agents.default, ignored: {", ".join(ignored)}', fg='yellow')
+        click.secho(
+            f'  Warning: package {source} includes agents not in agents.default, ignored: {", ".join(ignored)}',
+            fg='yellow',
+        )
 
     if repo_config.skills is not None:
         requested = set(repo_config.skills)
@@ -243,8 +259,11 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
                 if force or _confirm_override(f'  {e}. Override?'):
                     if verbose:
                         click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link, status = link_skill(skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode)
+                    link, status = link_skill(
+                        skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode
+                    )
                 else:
+                    skipped_paths.add(compact_path(str(Path(agent.path).expanduser() / skill.name)))
                     if verbose:
                         click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
                     continue
@@ -278,7 +297,14 @@ def _install_local(repo_config, new_lock_skills, configured_skill_keys, known_ag
 
 
 def _install_repo(
-    repo_config, store_dir, new_lock_skills, configured_skill_keys, known_agents, force=False, verbose=False
+    repo_config,
+    store_dir,
+    new_lock_skills,
+    configured_skill_keys,
+    known_agents,
+    skipped_paths,
+    force=False,
+    verbose=False,
 ):
     """Install skills from a git repo. Returns (added_count, deferred_lines)."""
     repo_dir_name = repo_url_to_dirname(repo_config.repo)
@@ -293,7 +319,9 @@ def _install_repo(
             _progress(f'  Cloning {repo_config.repo}...')
         else:
             click.echo(click.style(f'Cloning {repo_config.repo}...', fg='blue', bold=True))
-        clone_or_pull(repo_config.repo, repo_path, clone_strategy=repo_config.clone_strategy, skills_dir=repo_config.skills_dir)
+        clone_or_pull(
+            repo_config.repo, repo_path, clone_strategy=repo_config.clone_strategy, skills_dir=repo_config.skills_dir
+        )
 
     commit = get_head_commit(repo_path)
     try:
@@ -309,7 +337,10 @@ def _install_repo(
         if not verbose:
             _clear_progress()
         source = compact_path(repo_config.source_key)
-        click.secho(f'  Warning: package {source} includes agents not in agents.default, ignored: {", ".join(ignored)}', fg='yellow')
+        click.secho(
+            f'  Warning: package {source} includes agents not in agents.default, ignored: {", ".join(ignored)}',
+            fg='yellow',
+        )
 
     if repo_config.skills is not None:
         requested = set(repo_config.skills)
@@ -320,15 +351,28 @@ def _install_repo(
             if not verbose:
                 _progress(f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...')
             else:
-                click.echo(click.style(f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...', fg='blue'))
-            clone_or_pull(repo_config.repo, repo_path, clone_strategy=repo_config.clone_strategy, skills_dir=repo_config.skills_dir)
+                click.echo(
+                    click.style(
+                        f'  Pulling {repo_config.repo} (missing skills: {", ".join(sorted(missing))})...', fg='blue'
+                    )
+                )
+            clone_or_pull(
+                repo_config.repo,
+                repo_path,
+                clone_strategy=repo_config.clone_strategy,
+                skills_dir=repo_config.skills_dir,
+            )
             commit = get_head_commit(repo_path)
             try:
                 detected = detect_skills(repo_path, repo_config.skills_dir)
             except ValueError as e:
                 raise click.ClickException(str(e))
             if verbose:
-                click.echo(click.style(f'  Found skills after pull: {", ".join(s.name for s in detected) or "(none)"}', dim=True))
+                click.echo(
+                    click.style(
+                        f'  Found skills after pull: {", ".join(s.name for s in detected) or "(none)"}', dim=True
+                    )
+                )
             skills_to_install = [s for s in detected if s.name in requested]
             still_missing = requested - {s.name for s in skills_to_install}
             if still_missing:
@@ -365,8 +409,11 @@ def _install_repo(
                 if force or _confirm_override(f'  {e}. Override?'):
                     if verbose:
                         click.echo(click.style(f'  Overriding existing skill {skill.name}', fg='magenta'))
-                    link, status = link_skill(skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode)
+                    link, status = link_skill(
+                        skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode
+                    )
                 else:
+                    skipped_paths.add(compact_path(str(Path(agent.path).expanduser() / skill.name)))
                     if verbose:
                         click.echo(click.style(f'  Skipped {skill.name} for [{agent_name}]', dim=True))
                     continue
@@ -412,14 +459,22 @@ def run_install_package(
     new_lock_skills: list[InstalledSkill] = []
     configured_skill_keys: set[tuple[str, str]] = set()
 
+    skipped_paths: set[str] = set()
     try:
         if repo_config.is_local:
             added_count, deferred_lines = _install_local(
-                repo_config, new_lock_skills, configured_skill_keys, known_agents, force, verbose
+                repo_config, new_lock_skills, configured_skill_keys, known_agents, skipped_paths, force, verbose
             )
         else:
             added_count, deferred_lines = _install_repo(
-                repo_config, store_dir, new_lock_skills, configured_skill_keys, known_agents, force, verbose
+                repo_config,
+                store_dir,
+                new_lock_skills,
+                configured_skill_keys,
+                known_agents,
+                skipped_paths,
+                force,
+                verbose,
             )
     except BaseException:
         if not verbose:
@@ -449,7 +504,7 @@ def run_install_package(
                 continue
         replaced.append(existing)
     merged_skills.extend(new_lock_skills)
-    removed_count = _remove_stale_links(replaced, merged_skills, configured_skill_keys)
+    removed_count = _remove_stale_links(replaced, merged_skills, configured_skill_keys, skipped_paths)
     if not verbose:
         parts = []
         if added_count:

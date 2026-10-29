@@ -1,4 +1,5 @@
 """Behavior coverage for shared agent configuration across CLI commands."""
+
 import subprocess
 
 import pytest
@@ -17,10 +18,16 @@ def invoke(tmp_path, *args, isolated=True):
     return result.output
 
 
-@pytest.mark.parametrize('override', [
-    {'typo': {'path': '/unused'}}, {'claude': {'install_mode': 'copy'}},
-    {'claude': {'path': ''}}, {'claude': {'path': '  '}}, {'claude': {'mode': 'symlink'}},
-])
+@pytest.mark.parametrize(
+    'override',
+    [
+        {'typo': {'path': '/unused'}},
+        {'claude': {'install_mode': 'copy'}},
+        {'claude': {'path': ''}},
+        {'claude': {'path': '  '}},
+        {'claude': {'mode': 'symlink'}},
+    ],
+)
 def test_invalid_override_has_no_install_side_effects(tmp_path, override):
     _write_config(tmp_path, [], {'override': override})
     result = CliRunner().invoke(cli, [*_cli_args(tmp_path), 'install'])
@@ -29,10 +36,14 @@ def test_invalid_override_has_no_install_side_effects(tmp_path, override):
     assert not (tmp_path / 'agents').exists()
 
 
-@pytest.mark.parametrize('includes,ignored', [(['claude', 'openclaw'], 'openclaw'), (['claud'], 'claud'), (['claude'], None)])
+@pytest.mark.parametrize(
+    'includes,ignored', [(['claude', 'openclaw'], 'openclaw'), (['claud'], 'claud'), (['claude'], None)]
+)
 def test_includes_warning_preserves_config(tmp_path, includes, ignored):
     repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
-    path = _write_config(tmp_path, [{'local_path': str(repo), 'agents': {'includes': includes}}], {'default': ['claude']})
+    path = _write_config(
+        tmp_path, [{'local_path': str(repo), 'agents': {'includes': includes}}], {'default': ['claude']}
+    )
     before = path.read_text()
     output = invoke(tmp_path, 'install')
     assert ('ignored:' in output) == bool(ignored)
@@ -42,18 +53,23 @@ def test_includes_warning_preserves_config(tmp_path, includes, ignored):
     assert path.read_text() == before
 
 
-@pytest.mark.parametrize('defaults,selection', [(['claude', 'standard'], None), (['claude', 'standard'], [1]), (None, None)])
+@pytest.mark.parametrize(
+    'defaults,selection', [(['claude', 'standard'], None), (['claude', 'standard'], [1]), (None, None)]
+)
 def test_picker_follows_defaults(tmp_path, monkeypatch, defaults, selection):
     repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
     _write_config(tmp_path, [], {'default': defaults} if defaults else None)
     expected = ['standard', 'claude'] if defaults else ['standard', 'claude', 'codex', 'openclaw', 'pi']
+
     def select(items, header, preselected=None):
         assert items == expected
         assert preselected is None
         return list(range(len(items))) if selection is None else selection
+
     monkeypatch.setattr('skm.cli.interactive_multi_select', select)
     invoke(tmp_path, 'install', str(repo), 'demo')
     from skm.config import load_config, save_config
+
     config = load_config(tmp_path / 'config/skills.yaml')
     if selection is None:
         assert config.packages[0].agents is None
@@ -72,8 +88,10 @@ def test_override_migration(tmp_path, monkeypatch, command):
     monkeypatch.setenv('HOME', str(tmp_path))
     repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
     packages = [{'repo': str(repo)}] if command in ('update', 'unchanged') else [{'local_path': str(repo)}]
+
     def config_at(path):
         _write_config(tmp_path, packages, {'default': ['claude'], 'override': {'claude': {'path': path}}})
+
     config_at('~/old')
     invoke(tmp_path, 'install', isolated=False)
     assert (tmp_path / 'old/demo').is_symlink()
@@ -87,7 +105,13 @@ def test_override_migration(tmp_path, monkeypatch, command):
         subprocess.run(['git', 'add', '.'], cwd=repo, check=True, capture_output=True)
         subprocess.run(['git', 'commit', '-m', 'change'], cwd=repo, check=True, capture_output=True)
     monkeypatch.setattr('skm.cli.interactive_multi_select', lambda items, **kwargs: list(range(len(items))))
-    args = ('install', str(repo)) if command == 'direct' else ('update', 'demo') if command in ('update', 'unchanged') else ('install',)
+    args = (
+        ('install', str(repo))
+        if command == 'direct'
+        else ('update', 'demo')
+        if command in ('update', 'unchanged')
+        else ('install',)
+    )
     output = invoke(tmp_path, *args, isolated=False)
     if command == 'unchanged':
         assert 'Already up to date' in output
@@ -104,7 +128,11 @@ def test_override_migration(tmp_path, monkeypatch, command):
 
 def test_materialize_and_list_agents_dir(tmp_path):
     repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
-    _write_config(tmp_path, [{'local_path': str(repo)}], {'default': ['standard'], 'override': {'standard': {'install_mode': 'materialize'}}})
+    _write_config(
+        tmp_path,
+        [{'local_path': str(repo)}],
+        {'default': ['standard'], 'override': {'standard': {'install_mode': 'materialize'}}},
+    )
     invoke(tmp_path, 'install')
     target = tmp_path / 'agents/standard/demo'
     assert target.is_dir() and not target.is_symlink()
@@ -176,8 +204,10 @@ def test_update_warns_ignored_includes_even_if_current(tmp_path):
 
 def test_invalid_direct_config_does_not_clone(tmp_path, monkeypatch):
     _write_config(tmp_path, [], {'override': {'unknown': {}}})
+
     def unexpected_clone(*args, **kwargs):
         pytest.fail('Invalid configuration must be rejected before cloning')
+
     monkeypatch.setattr('skm.git.clone_or_pull', unexpected_clone)
     result = CliRunner().invoke(cli, [*_cli_args(tmp_path), 'install', 'https://example.com/unused.git'])
     assert result.exit_code != 0
@@ -189,7 +219,52 @@ def test_install_mode_roundtrip(tmp_path):
     repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
     target = tmp_path / 'agents/standard/demo'
     for mode in ['symlink', 'materialize', 'symlink']:
-        _write_config(tmp_path, [{'local_path': str(repo)}], {'default': ['standard'], 'override': {'standard': {'install_mode': mode}}})
+        _write_config(
+            tmp_path,
+            [{'local_path': str(repo)}],
+            {'default': ['standard'], 'override': {'standard': {'install_mode': mode}}},
+        )
         invoke(tmp_path, 'install')
         assert target.is_dir()
         assert target.is_symlink() == (mode == 'symlink')
+
+
+@pytest.mark.parametrize(
+    'command,source_type',
+    [
+        ('install', 'local_path'),
+        ('install', 'repo'),
+        ('direct', 'local_path'),
+    ],
+)
+def test_declined_override_preserves_user_directory(tmp_path, monkeypatch, command, source_type):
+    monkeypatch.setenv('HOME', str(tmp_path))
+    for variable in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR'):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
+    _write_config(tmp_path, [{source_type: str(repo)}], {'default': ['claude', 'codex']})
+    invoke(tmp_path, 'install')
+    target = tmp_path / 'agents/claude/demo'
+    target.unlink()
+    target.mkdir()
+    notes = target / 'my-notes.md'
+    notes.write_text('user-authored content')
+    prompts = []
+
+    def decline(message):
+        prompts.append(message)
+        return False
+
+    monkeypatch.setattr('skm.commands.install._confirm_override', decline)
+    monkeypatch.setattr('skm.cli.interactive_multi_select', lambda items, **kwargs: list(range(len(items))))
+    args = ('install', str(repo)) if command == 'direct' else ('install',)
+    invoke(tmp_path, *args)
+    assert len(prompts) == 1
+    assert target.is_dir() and not target.is_symlink()
+    assert notes.read_text() == 'user-authored content'
+    assert _load_lock(tmp_path)['skills'][0]['linked_to'] == ['~/agents/codex/demo']
+    # Once relinquished, a later config removal must also leave user data alone.
+    _write_config(tmp_path, [], {'default': ['claude', 'codex']})
+    invoke(tmp_path, 'install')
+    assert notes.read_text() == 'user-authored content'
+    assert not (tmp_path / 'agents/codex/demo').exists()
