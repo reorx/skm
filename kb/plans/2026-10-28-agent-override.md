@@ -326,8 +326,8 @@ PRD 验收标准对应的用例（e2e 都在 `tests/test_cli_e2e.py`，用 `_cli
 
 ### 风险与待定
 
-- **清理时会 rmtree 实体目录**：沿用 `run_install` 现有的做法，旧位置如果是实体目录且被用户改过，清理时也会删掉。这次把同样的行为扩展到 update 和直接安装。要做到"有改动先确认"，依赖实体副本同步规则那个单独的立项。
-- **路径比较只做 pathlib 规范化**：`Path` 会去掉末尾斜杠和 `.`，但不会解析 `..`，也不跟随软链。lock 路径和 agent 目录出自同一套解析，正常情况下一致；用户在 override 里写 `..` 或经软链的目录时，list 可能认不出归属，只影响显示，不影响安装。
+- **清理时会 rmtree 实体目录**：沿用 `run_install` 现有的做法，旧位置如果是实体目录且被用户改过，清理时也会删掉。这次把同样的行为扩展到 update 和直接安装。要做到"有改动先确认"，依赖实体副本同步规则那个单独的立项。用户在覆盖确认里拒绝的当前目标不属于这一条：它会被保留，并且不再记录在 lock 里。
+- **路径比较**：清理判断新旧路径是否同一位置，比较的是文件系统身份（同名，并且父目录 `samefile`），所以经软链或只有大小写不同的 agent 目录不会删掉刚装好的 skill。原稿说"只影响显示，不影响安装"，评审复现证明不成立，已修正。list 的归属判断仍然只做 pathlib 规范化，经 `..` 或软链的目录可能认不出归属，只影响显示。
 - **改配置后 list 的显示**：改了 override.path 但还没 install 时，lock 里的旧路径不属于任何 agent，list 不显示 agent 名（PRD 已写明）。
 - **progress 行和警告交错**：非 verbose 模式下，进度行写在 stderr，警告写在 stdout。警告前必须先 `_clear_progress()`，否则会接在进度行后面。人工验收时重点看。
 - **PR #7 的署名**：实现参考了 PR #7 的思路（统一解析、父目录比较、选择器只列 default）。提交时可以考虑加 `Co-authored-by`，由用户决定。
@@ -342,3 +342,5 @@ PRD 验收标准对应的用例（e2e 都在 `tests/test_cli_e2e.py`，用 `_cli
 PTY 验证选择器全选、materialize 安装、includes 警告和迁移清理输出；隔离样例与脚本保存在 `tmp/2026-10-28-agent-override/`，未使用真实 SKM 配置或 agent 目录。验收中发现已有的相对 local_path 软链问题，已记入 known issues，绝对源路径下复验文件可读。
 
 详见 [实施总结](../sessions/2026-10-28-agent-override.md)。
+
+2026-10-29 评审修复了 4 个问题，每个问题一个提交：拒绝覆盖后仍删除用户目录（[总结](../sessions/2026-10-29-skm-ovfix-decline.md)）；别名路径被当作旧路径删除（[总结](../sessions/2026-10-29-skm-ovfix-alias.md)）；`override.path` 接受相对路径（[总结](../sessions/2026-10-29-skm-ovfix-relpath.md)）；`compact_path` 不看路径分隔符边界（[总结](../sessions/2026-10-29-skm-ovfix-home.md)）。离线测试 216 passed。

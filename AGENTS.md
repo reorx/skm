@@ -60,7 +60,7 @@ All git subprocess calls go through `run_cmd()` in `git.py`, which captures stdo
 
 ## Path Handling
 
-Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from `utils.py` to replace the home directory with `~`, avoiding exposure of usernames. When reading these paths back for filesystem operations, `Path.expanduser()` is used.
+Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from `utils.py` to replace the home directory with `~`, avoiding exposure of usernames. It only compacts at a path-separator boundary, so a sibling such as `/Users/x2/...` stays absolute (`~2/...` would make `expanduser()` raise). When reading these paths back for filesystem operations, `Path.expanduser()` is used.
 
 ## CLI Commands
 
@@ -118,9 +118,9 @@ Defined in `src/skm/types.py` as `BUILTIN_AGENTS`:
 - `openclaw` → `~/.openclaw/skills`
 - `pi` → `~/.pi/agent/skills`
 
-`BUILTIN_AGENTS` stores `AgentSpec` definitions; `agents.resolve_agents()` returns runtime `ResolvedAgent` paths and modes. Priority: `--agents-dir` → override path → non-empty agent environment variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`, each with `/skills`) → built-in path. Only openclaw defaults to `materialize`; other agents default to `symlink`, and `agents.override` can change either field for built-in names only.
+`BUILTIN_AGENTS` stores `AgentSpec` definitions; `agents.resolve_agents()` returns runtime `ResolvedAgent` paths and modes. Priority: `--agents-dir` → override path → non-empty agent environment variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`, each with `/skills`) → built-in path. Only openclaw defaults to `materialize`; other agents default to `symlink`, and `agents.override` can change either field for built-in names only. `override.path` must be absolute or start with `~`; relative paths are rejected at config validation because cleanup would resolve them against whatever cwd the next command runs in.
 
-Pass resolved agents into install/update/list; linker receives only the path and `install_mode`. List compares exact parent directories and falls back with a warning on unreadable config; normal list recognizes all built-ins, while `--all` scans defaults. Install, direct package reinstall, and updates with new commits clean tracked obsolete paths; unchanged updates retain old installs and lock paths.
+Pass resolved agents into install/update/list; linker receives only the path and `install_mode`. List compares exact parent directories and falls back with a warning on unreadable config; normal list recognizes all built-ins, while `--all` scans defaults. Install, direct package reinstall, and updates with new commits clean tracked obsolete paths; unchanged updates retain old installs and lock paths. Cleanup never compares lock paths as plain strings only: an old path that is the same location as a new one (`utils.same_install_location`, same name and `samefile` parent) is kept, so symlinked or case-different agent dirs do not lose fresh installs. A target the user declined to overwrite is kept and dropped from the lock.
 
 ## Testing
 
@@ -157,7 +157,7 @@ skm --config /tmp/test.yaml \
 - `--config` — path to `skills.yaml` (default: `~/.config/skm/skills.yaml`)
 - `--lock` — path to `skills-lock.yaml` (default: `~/.config/skm/skills-lock.yaml`)
 - `--store` — directory for cloned repos (default: `~/.local/share/skm/skills/`)
-- `--agents-dir` — base directory for agent symlinks; creates subdirs per agent name (overrides `BUILTIN_AGENTS` paths)
+- `--agents-dir` — base directory for agent installs; creates subdirs per agent name (overrides `BUILTIN_AGENTS` paths)
 
 ### E2E Test Helpers
 
