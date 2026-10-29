@@ -268,3 +268,78 @@ def test_declined_override_preserves_user_directory(tmp_path, monkeypatch, comma
     invoke(tmp_path, 'install')
     assert notes.read_text() == 'user-authored content'
     assert not (tmp_path / 'agents/codex/demo').exists()
+
+
+@pytest.mark.parametrize('command', ['install', 'direct', 'update'])
+@pytest.mark.parametrize('mode', ['symlink', 'materialize'])
+@pytest.mark.parametrize('alias', ['compat_symlink', 'case'])
+def test_override_alias_preserves_install(tmp_path, monkeypatch, command, mode, alias):
+    monkeypatch.setenv('HOME', str(tmp_path))
+    for variable in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR'):
+        monkeypatch.delenv(variable, raising=False)
+    old = tmp_path / 'old'
+    old.mkdir()
+    if alias == 'case' and not (tmp_path / 'Old').exists():
+        pytest.skip('Filesystem is case-sensitive')
+    repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
+    packages = [{'repo' if command == 'update' else 'local_path': str(repo)}]
+
+    def config_at(path):
+        _write_config(tmp_path, packages, {
+            'default': ['claude'],
+            'override': {'claude': {'path': path, 'install_mode': mode}},
+        })
+
+    monkeypatch.setattr('skm.commands.install._confirm_override', lambda message: False)
+    monkeypatch.setattr('skm.cli.interactive_multi_select', lambda items, **kwargs: list(range(len(items))))
+    config_at('~/old')
+    invoke(tmp_path, 'install', isolated=False)
+    if alias == 'compat_symlink':
+        old.rename(tmp_path / 'new')
+        old.symlink_to(tmp_path / 'new', target_is_directory=True)
+        new_name = 'new'
+    else:
+        new_name = 'Old'
+    config_at(f'~/{new_name}')
+    if command == 'update':
+        (repo / 'skills/demo/new.txt').write_text('updated content')
+        subprocess.run(['git', 'add', '.'], cwd=repo, check=True, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'change'], cwd=repo, check=True, capture_output=True)
+    args = ('install', str(repo)) if command == 'direct' else ('update', 'demo') if command == 'update' else ('install',)
+    output = invoke(tmp_path, *args, isolated=False)
+    target = tmp_path / new_name / 'demo'
+    assert (target / 'SKILL.md').is_file(), output
+    assert target.is_symlink() == (mode == 'symlink')
+    if command == 'update':
+        assert (target / 'new.txt').read_text() == 'updated content'
+    assert _load_lock(tmp_path)['skills'][0]['linked_to'] == [f'~/{new_name}/demo']
+    assert 'agent config changed' not in output
+    assert 'Removing stale links' not in output
+    assert 'removed 1 skill' not in output
+
+
+@pytest.mark.parametrize('command', ['install', 'direct'])
+def test_declined_override_alias_preserves_user_directory(tmp_path, monkeypatch, command):
+    monkeypatch.setenv('HOME', str(tmp_path))
+    for variable in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR'):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _make_skill_repo(tmp_path, 'repo', [{'name': 'demo'}])
+    packages = [{'local_path': str(repo)}]
+    _write_config(tmp_path, packages, {'default': ['claude'], 'override': {'claude': {'path': '~/old'}}})
+    invoke(tmp_path, 'install', isolated=False)
+    old = tmp_path / 'old'
+    old.rename(tmp_path / 'new')
+    old.symlink_to(tmp_path / 'new', target_is_directory=True)
+    target = tmp_path / 'new/demo'
+    target.unlink()
+    target.mkdir()
+    (target / 'notes.txt').write_text('user content')
+    _write_config(tmp_path, packages, {'default': ['claude'], 'override': {'claude': {'path': '~/new'}}})
+    monkeypatch.setattr('skm.commands.install._confirm_override', lambda message: False)
+    monkeypatch.setattr('skm.cli.interactive_multi_select', lambda items, **kwargs: list(range(len(items))))
+    args = ('install', str(repo)) if command == 'direct' else ('install',)
+    output = invoke(tmp_path, *args, isolated=False)
+    assert (target / 'notes.txt').is_file(), output
+    assert (target / 'notes.txt').read_text() == 'user content'
+    assert _load_lock(tmp_path)['skills'][0]['linked_to'] == []
+    assert 'Removing stale links' not in output

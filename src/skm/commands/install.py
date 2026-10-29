@@ -9,7 +9,7 @@ from skm.git import clone_or_pull, get_head_commit, repo_url_to_dirname
 from skm.linker import find_ignored_includes, link_skill, unlink_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
 from skm.types import ResolvedAgent, InstalledSkill, LockFile, SkillRepoConfig, SkmConfig
-from skm.utils import compact_path
+from skm.utils import compact_path, same_install_location
 
 
 STATUS_COLORS = {
@@ -170,9 +170,9 @@ def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys, skip
 
         for link_path_str in old_skill.linked_to:
             # Declined targets belong to the user now; neither remove nor track them.
-            if link_path_str in skipped_paths:
+            if any(same_install_location(link_path_str, skipped) for skipped in skipped_paths):
                 continue
-            if link_path_str not in new_linked_paths:
+            if not any(same_install_location(link_path_str, new_path) for new_path in new_linked_paths):
                 p = Path(link_path_str).expanduser()
                 if skill_still_configured:
                     reason = 'agent config changed'

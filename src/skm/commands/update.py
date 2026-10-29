@@ -8,7 +8,7 @@ from skm.git import clone_or_pull, get_head_commit, get_log_between, repo_url_to
 from skm.linker import find_ignored_includes, unlink_skill, link_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
 from skm.types import ResolvedAgent, InstalledSkill, SkmConfig
-from skm.utils import compact_path
+from skm.utils import compact_path, same_install_location
 
 
 def run_update(
@@ -46,7 +46,7 @@ def run_update(
             repos_to_update.setdefault(found.repo, []).append(found)
 
     if not repos_to_update:
-        click.echo("Nothing to update.")
+        click.echo('Nothing to update.')
         return
 
     for repo_url, skills in repos_to_update.items():
@@ -78,7 +78,10 @@ def _update_repo(
 
     ignored = find_ignored_includes(repo_config.agents, known_agents)
     if ignored:
-        click.secho(f'  Warning: package {repo_url} includes agents not in agents.default, ignored: {", ".join(ignored)}', fg='yellow')
+        click.secho(
+            f'  Warning: package {repo_url} includes agents not in agents.default, ignored: {", ".join(ignored)}',
+            fg='yellow',
+        )
 
     # Get old commit from any skill in this repo
     old_commit = None
@@ -140,7 +143,7 @@ def _update_repo(
             linked_paths.append(compact_path(str(link)))
 
         for old_path in locked_skill.linked_to:
-            if old_path not in linked_paths:
+            if not any(same_install_location(old_path, new_path) for new_path in linked_paths):
                 path = Path(old_path).expanduser()
                 if path.is_symlink() or path.is_dir():
                     unlink_skill(path.name, str(path.parent))
