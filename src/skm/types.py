@@ -154,4 +154,5 @@ class DetectedSkill(BaseModel):
 CONFIG_DIR = Path('~/.config/skm').expanduser()
 CONFIG_PATH = CONFIG_DIR / 'skills.yaml'
 LOCK_PATH = CONFIG_DIR / 'skills-lock.yaml'
+LOCAL_SOURCES_DIRNAME = 'local_sources'  # sits next to skills.yaml
 STORE_DIR = Path('~/.local/share/skm/skills').expanduser()

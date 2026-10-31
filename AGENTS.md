@@ -21,6 +21,7 @@ src/skm/
 ├── git.py              # Sparse clone (no-checkout + ls-tree + sparse-checkout), pull, fetch, commit SHA helpers (unified run_cmd error handling)
 ├── utils.py            # Utility functions (compact_path)
 ├── linker.py           # Symlink skills to agent dirs, resolve includes/excludes
+├── local_sources.py    # Device-local sources: symlinks in <config dir>/local_sources/
 └── commands/
     ├── install.py      # Clone repos, detect skills, link to agents, update lock
     ├── list_cmd.py     # Print installed skills from lock file
@@ -34,6 +35,7 @@ tests/
 ├── test_git.py          # Git operations (sparse clone command sequence, real local-repo sparse checkout, pull re-sparsing, clone failure handling)
 ├── test_linker.py       # Symlink creation, agent filtering
 ├── test_install.py      # Install command unit tests
+├── test_local_sources.py # `install --local`, local_sources scanning, remove of local-source skills
 └── test_cli_e2e.py      # End-to-end CLI tests for all commands
 ```
 
@@ -41,6 +43,7 @@ tests/
 
 - **Config:** `~/.config/skm/skills.yaml` — YAML dict with `packages` (repo list) and optional `agents.default` / `agents.override`
 - **Lock:** `~/.config/skm/skills-lock.yaml` — tracks installed skills, commits, symlink paths
+- **Local sources:** `~/.config/skm/local_sources/` — always `skills.yaml`'s parent dir (so `--config` isolates it too); holds a self-ignoring `.gitignore` (`*`)
 - **Store:** `~/.local/share/skm/skills/` — cloned repos cached here
 - **Agent dirs:** Skills are symlinked into each agent's skill directory (e.g. `~/.claude/skills/`, `~/.codex/skills/`)
 
@@ -65,9 +68,14 @@ Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from 
 ## CLI Commands
 
 - `skm install` — Sparse-clone repos (idempotent: skips pull if already cloned), detect skills, create symlinks, remove stale links, update lock. Treats `skills.yaml` as declarative state: removes links for skills dropped from config or agents changed by includes/excludes. Only removes links tracked in the lock file — manually created files in agent dirs are never touched.
+- `skm install --local <dir>` — Symlink `<dir>` (resolved absolute) into `local_sources/` and install just that source; never writes `skills.yaml`. See Local Sources.
 - `skm list` — Show installed skills and their linked paths from lock file
 - `skm check-updates` — Fetch remotes, compare against locked commits, show changelog
 - `skm update <skill_name>` — Pull latest for a skill's repo, re-link, update lock
+
+## Local Sources
+
+Lets one `skills.yaml` be shared across devices (config dir in git) while each device installs extra skills. Full `skm install` turns every usable entry into `SkillRepoConfig(local_path=<entry path>)` (all skills, default agents) and passes them via `run_install(local_sources=...)` — they must never be written to `skills.yaml`. The lock's `local_path` is the entry path, not the resolved target, which is how `skm remove` recognises a local-source skill (`is_local_source_path`); remove only ever unlinks the entry, never its target.
 
 ## Config Format (skills.yaml)
 

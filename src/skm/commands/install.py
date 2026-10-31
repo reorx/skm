@@ -86,7 +86,9 @@ def run_install(
     known_agents: dict[str, ResolvedAgent],
     force: bool = False,
     verbose: bool = False,
+    local_sources: list[SkillRepoConfig] | None = None,
 ) -> None:
+    """Sync config packages plus device-local sources (never saved to config)."""
     lock = load_lock(lock_path)
     new_lock_skills: list[InstalledSkill] = []
     skipped_paths: set[str] = set()
@@ -99,7 +101,7 @@ def run_install(
     all_deferred_lines: list[str] = []
 
     try:
-        for repo_config in config.packages:
+        for repo_config in [*config.packages, *(local_sources or [])]:
             if repo_config.is_local:
                 count, lines = _install_local(
                     repo_config, new_lock_skills, configured_skill_keys, known_agents, skipped_paths, force, verbose

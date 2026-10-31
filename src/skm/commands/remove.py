@@ -4,7 +4,9 @@ from pathlib import Path
 import click
 
 from skm.config import load_config, save_config
+from skm.local_sources import is_local_source_path
 from skm.lock import load_lock, save_lock
+from skm.types import LockFile
 from skm.utils import compact_path
 
 
@@ -12,6 +14,7 @@ def run_remove(
     skill_name: str,
     config_path: Path,
     lock_path: Path,
+    local_sources_dir: Path,
 ) -> None:
     lock = load_lock(lock_path)
 
@@ -42,6 +45,11 @@ def run_remove(
     lock.skills = [s for s in lock.skills if s.name != skill_name]
     save_lock(lock, lock_path)
     click.echo(f'Lock file updated: {lock_path}')
+
+    if skill_entry.local_path and is_local_source_path(local_sources_dir, skill_entry.local_path):
+        _forget_local_source(skill_name, skill_entry.local_path, lock)
+        click.echo(click.style(f'Skill "{skill_name}" removed.', fg='green'))
+        return
 
     # Update config if it exists
     if not config_path.exists():
@@ -88,3 +96,22 @@ def run_remove(
         click.echo(f'Config updated: {config_path}')
 
     click.echo(click.style(f'Skill "{skill_name}" removed.', fg='green'))
+
+
+def _forget_local_source(skill_name: str, local_path: str, lock: LockFile) -> None:
+    """Unlink a local source once none of its skills remain installed.
+
+    Only the symlink in local_sources/ is removed, never the directory it points at.
+    """
+    entry = Path(local_path).expanduser()
+    label = compact_path(str(entry))
+    still_used = any(s.local_path and Path(s.local_path).expanduser() == entry for s in lock.skills)
+    if still_used or not entry.is_symlink():
+        click.secho(
+            f'  Warning: local source {label} still provides "{skill_name}", so the next `skm install` '
+            f'will bring it back. Delete {label} to stop installing it.',
+            fg='yellow',
+        )
+        return
+    entry.unlink()
+    click.echo(f'  Removed local source {label}')

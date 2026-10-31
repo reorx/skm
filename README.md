@@ -60,12 +60,25 @@ skm install https://github.com/blader/humanizer --agents-includes claude,codex
 
 This detects available skills, lets you pick which ones to install (unless a specific skill name is given), and automatically adds the package to your `skills.yaml` config.
 
+### Device-local skills
+
+If you keep `~/.config/skm` in a git repo to share `skills.yaml` across machines, use `--local` for skills that only one machine should have:
+
+```bash
+skm install --local ~/Code/work-only-skills
+```
+
+This symlinks the directory to `~/.config/skm/local_sources/work-only-skills` and installs it right away. `skills.yaml` is not modified. The `local_sources/` directory contains a `.gitignore` with `*`, so it never gets committed, even if your repo's own `.gitignore` doesn't list it.
+
+Every later `skm install` also installs each entry in `local_sources/` as a `local_path:` package: all detected skills, default agents. To drop one, delete its link and run `skm install`. `skm remove <skill>` deletes the link for you when it removes the last installed skill from that source.
+
 ## Commands
 
 | Command | Description |
 |---|---|
 | `skm install` (or `skm i`) | Install all packages from config. Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent — also removes stale links (see below). |
 | `skm install <source> [skill]` (or `skm i`) | Install directly from a repo URL or local path without editing config. Interactively select skills and agents, then auto-update config. |
+| `skm install --local <dir>` | Link a directory into `local_sources/` and install it on this device only; `skills.yaml` is not changed. |
 | `skm list` | Show installed skills and their linked paths. |
 | `skm list --all` | Show all skills across all agent directories, marking which are managed by skm. |
 | `skm view <source>` | Browse and preview skills from a repo URL or local path without installing. |
@@ -126,10 +139,10 @@ Repo packages are cloned with a sparse checkout: skm runs `git clone --filter=bl
 
 ## Install Sync Behavior
 
-`skm install` treats `skills.yaml` as a declarative state file. Each run syncs the agent directories to match the config:
+`skm install` treats `skills.yaml` plus the entries in `local_sources/` as declarative state. Each run syncs the agent directories to match them:
 
 - **New skills** are linked to agent directories.
-- **Removed skills** (dropped from a package's `skills:` list, or entire package removed) have their links deleted.
+- **Removed skills** (dropped from a package's `skills:` list, entire package removed, or local source link deleted) have their links deleted.
 - **Agent config changes** (e.g. adding `excludes: [openclaw]`) remove links from excluded agents while keeping links in others.
 
 Changing an override path moves tracked installs on the next `skm install`. Reinstalling a source also cleans up that source's old locations. `skm update` does this when it pulls a new commit; an already-current repo keeps its existing installs until the next `skm install`.
@@ -224,6 +237,7 @@ skm --config /tmp/test.yaml \
 
 - **Config:** `~/.config/skm/skills.yaml`
 - **Lock:** `~/.config/skm/skills-lock.yaml`
+- **Local sources:** `~/.config/skm/local_sources/` (next to `skills.yaml`, self-gitignored)
 - **Store:** `~/.local/share/skm/skills/`
 
 ## Development

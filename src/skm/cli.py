@@ -21,7 +21,14 @@ class AliasGroup(click.Group):
         return super().get_command(ctx, cmd_name)
 
 from skm.config import load_config, save_config, upsert_package
+from skm.local_sources import (
+    add_local_source,
+    find_configured_duplicate,
+    get_local_sources_dir,
+    scan_local_sources,
+)
 from skm.tui import interactive_multi_select
+from skm.utils import compact_path
 from skm.types import (
     CONFIG_PATH,
     LOCK_PATH,
@@ -76,16 +83,25 @@ def _resolve_list_agents(config_path: Path, agents_dir: str | None, default_only
 @click.argument('source', required=False, default=None)
 @click.argument('skill_name', required=False, default=None)
 @click.option(
+    '--local',
+    'local_dir',
+    type=click.Path(exists=True, file_okay=False),
+    default=None,
+    help='Link a directory into local_sources/ next to skills.yaml and install it. '
+    'Device-local: never written to skills.yaml.',
+)
+@click.option(
     '--force', is_flag=True, default=False, help='Override existing non-symlink skill directories without prompting.'
 )
 @click.option('-v', '--verbose', is_flag=True, default=False, help='Show detailed output for every operation.')
 @click.option('--agents-includes', default=None, help='Comma-separated agents to include (skips interactive).')
 @click.option('--agents-excludes', default=None, help='Comma-separated agents to exclude (skips interactive).')
 @click.pass_context
-def install(ctx, source, skill_name, force, verbose, agents_includes, agents_excludes):
+def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes, agents_excludes):
     """Install skills from config or directly from a source.
 
-    SOURCE can be a repo URL or local path. If omitted, installs from config.
+    SOURCE can be a repo URL or local path. If omitted, installs from config
+    plus every entry in local_sources/.
     SKILL_NAME optionally specifies a single skill to install from the source.
     """
     from skm.commands.install import run_install, run_install_package
@@ -93,9 +109,25 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
     from skm.git import clone_or_pull, repo_url_to_dirname
     from skm.lock import load_lock
 
+    if local_dir is not None:
+        if source is not None:
+            raise click.UsageError('Cannot combine SOURCE with --local.')
+        if agents_includes or agents_excludes:
+            raise click.UsageError(
+                '--agents-includes/--agents-excludes cannot be used with --local; '
+                'local sources install to the default agents.'
+            )
+        _install_local_source(ctx, Path(local_dir), force=force, verbose=verbose)
+        return
+
     if source is None:
-        # Existing behavior: install from config
-        config = _load_config(ctx.obj['config_path'])
+        # Install from config plus device-local sources
+        config_path = ctx.obj['config_path']
+        sources_dir = get_local_sources_dir(config_path)
+        if not config_path.exists() and scan_local_sources(sources_dir)[0]:
+            config = SkmConfig(packages=[])
+        else:
+            config = _load_config(config_path)
         agents = resolve_agents(config.agents, ctx.obj['agents_dir'])
         run_install(
             config=config,
@@ -104,6 +136,7 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
             known_agents=agents,
             force=force,
             verbose=verbose,
+            local_sources=_local_source_packages(config, sources_dir),
         )
         return
 
@@ -250,6 +283,62 @@ def install(ctx, source, skill_name, force, verbose, agents_includes, agents_exc
 cli.add_alias('i', 'install')
 
 
+def _install_local_source(ctx, local_dir: Path, force: bool, verbose: bool) -> None:
+    """Link local_dir into local_sources/ and install it like a local_path package."""
+    from skm.commands.install import run_install_package
+    from skm.detect import detect_skills
+
+    config_path = ctx.obj['config_path']
+    config = _load_config(config_path) if config_path.exists() else SkmConfig(packages=[])
+    target = local_dir.expanduser().resolve()
+    target_label = compact_path(str(target))
+
+    if find_configured_duplicate(config, target) is not None:
+        click.echo(f'{target_label} is already a local_path package in skills.yaml; run `skm install` instead.')
+        return
+
+    try:
+        detected = detect_skills(target)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    if not detected:
+        raise click.ClickException(f'No skills found in {target_label}')
+
+    link, created = add_local_source(get_local_sources_dir(config_path), target)
+    if created:
+        click.echo(f'Linked local source {compact_path(str(link))} -> {target_label}')
+
+    run_install_package(
+        repo_config=SkillRepoConfig(local_path=str(link)),
+        lock_path=ctx.obj['lock_path'],
+        store_dir=ctx.obj['store_dir'],
+        known_agents=resolve_agents(config.agents, ctx.obj['agents_dir']),
+        force=force,
+        verbose=verbose,
+    )
+
+
+def _local_source_packages(config: SkmConfig, sources_dir: Path) -> list[SkillRepoConfig]:
+    """Turn usable local_sources/ entries into local_path packages, warning about skipped ones."""
+    usable, broken = scan_local_sources(sources_dir)
+    for entry in broken:
+        click.secho(
+            f'Warning: skipping local source {compact_path(str(entry))}: not a directory (dangling link?)',
+            fg='yellow',
+        )
+    packages = []
+    for entry in usable:
+        if find_configured_duplicate(config, entry) is not None:
+            click.secho(
+                f'Warning: skipping local source {compact_path(str(entry))}: '
+                'same directory as a local_path package in skills.yaml',
+                fg='yellow',
+            )
+            continue
+        packages.append(SkillRepoConfig(local_path=str(entry)))
+    return packages
+
+
 def _find_package_by_source(config: SkmConfig, source_key: str, is_local: bool) -> SkillRepoConfig | None:
     """Find existing package in config matching the source."""
     for pkg in config.packages:
@@ -282,6 +371,7 @@ def remove(ctx, skill_name: str):
         skill_name=skill_name,
         config_path=ctx.obj['config_path'],
         lock_path=ctx.obj['lock_path'],
+        local_sources_dir=get_local_sources_dir(ctx.obj['config_path']),
     )
 
 
