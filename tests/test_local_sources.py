@@ -334,3 +334,156 @@ class TestRemoveLocalSourceSkill:
         assert not (tmp_path / 'agents' / 'claude' / 'alpha').is_symlink()
         assert (tmp_path / 'agents' / 'claude' / 'beta').is_symlink()
         assert 'next' in result.output and 'install' in result.output
+
+
+def _write_config_with_agents(tmp_path: Path, packages: list[dict], default_agents: list[str]) -> Path:
+    config_path = tmp_path / 'config' / 'skills.yaml'
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    buf = StringIO()
+    _yaml.dump({'agents': {'default': default_agents}, 'packages': packages}, buf)
+    config_path.write_text(buf.getvalue())
+    return config_path
+
+
+def _override_line(skill: str, winner: Path, loser: Path) -> str:
+    return f'{skill}: {winner} overrides {loser}'
+
+
+def _link_target(tmp_path: Path, agent: str, skill: str) -> Path:
+    return Path((tmp_path / 'agents' / agent / skill).readlink())
+
+
+class TestLocalSourceOverrides:
+    """A local source wins over a skills.yaml package that provides a skill of the same name."""
+
+    def _setup(self, tmp_path: Path) -> tuple[Path, Path]:
+        shared = _make_package(tmp_path / 'src', 'shared', ['demo', 'other'])
+        _write_config_with_agents(tmp_path, [{'local_path': str(shared)}], ['claude', 'codex'])
+        dev = _make_singleton(tmp_path / 'src', 'dev', 'demo')
+        return shared, dev
+
+    def _add_local_link(self, tmp_path: Path, target: Path) -> Path:
+        sources = _sources_dir(tmp_path)
+        sources.mkdir(parents=True, exist_ok=True)
+        link = sources / target.name
+        link.symlink_to(target)
+        return link
+
+    def test_full_install_links_the_local_version(self, tmp_path):
+        shared, dev = self._setup(tmp_path)
+        link = self._add_local_link(tmp_path, dev)
+
+        result = _invoke(tmp_path, 'install')
+
+        assert result.exit_code == 0, result.output
+        assert _link_target(tmp_path, 'claude', 'demo') == link
+        assert _link_target(tmp_path, 'codex', 'demo') == link
+        assert _link_target(tmp_path, 'claude', 'other') == shared / 'skills' / 'other'
+
+    def test_full_install_reports_the_override(self, tmp_path):
+        shared, dev = self._setup(tmp_path)
+        link = self._add_local_link(tmp_path, dev)
+
+        result = _invoke(tmp_path, 'install')
+
+        assert result.exit_code == 0, result.output
+        assert 'Local source overrides' in result.output
+        assert _override_line('demo', link, shared) in result.output
+
+    def test_lock_keeps_only_the_local_entry(self, tmp_path):
+        shared, dev = self._setup(tmp_path)
+        link = self._add_local_link(tmp_path, dev)
+
+        result = _invoke(tmp_path, 'install')
+
+        assert result.exit_code == 0, result.output
+        demos = [s for s in _load_lock(tmp_path)['skills'] if s['name'] == 'demo']
+        assert len(demos) == 1
+        assert Path(demos[0]['local_path']).expanduser() == link
+
+    def test_repeated_install_is_up_to_date_and_still_reports_the_override(self, tmp_path):
+        shared, dev = self._setup(tmp_path)
+        link = self._add_local_link(tmp_path, dev)
+        assert _invoke(tmp_path, 'install').exit_code == 0
+
+        result = _invoke(tmp_path, 'install')
+
+        assert result.exit_code == 0, result.output
+        assert 'up to date' in result.output
+        assert _override_line('demo', link, shared) in result.output
+
+    def test_overriding_a_materialized_agent_never_prompts(self, tmp_path):
+        shared = _make_package(tmp_path / 'src', 'shared', ['demo'])
+        _write_config_with_agents(tmp_path, [{'local_path': str(shared)}], ['claude', 'openclaw'])
+        dev = _make_singleton(tmp_path / 'src', 'dev', 'demo')
+        (dev / 'notes.md').write_text('dev only\n')
+        self._add_local_link(tmp_path, dev)
+
+        first = _invoke(tmp_path, 'install')
+        second = _invoke(tmp_path, 'install')
+
+        assert first.exit_code == 0, first.output
+        assert second.exit_code == 0, second.output
+        assert 'Override?' not in first.output + second.output
+        assert (tmp_path / 'agents' / 'openclaw' / 'demo' / 'notes.md').exists()
+
+    def test_deleting_the_local_source_restores_the_shared_version(self, tmp_path):
+        shared, dev = self._setup(tmp_path)
+        link = self._add_local_link(tmp_path, dev)
+        assert _invoke(tmp_path, 'install').exit_code == 0
+        link.unlink()
+
+        result = _invoke(tmp_path, 'install')
+
+        assert result.exit_code == 0, result.output
+        assert _link_target(tmp_path, 'claude', 'demo') == shared / 'skills' / 'demo'
+        assert 'Local source overrides' not in result.output
+        demo = _lock_entries(tmp_path)['demo']
+        assert Path(demo['local_path']).expanduser() == shared
+
+    def test_install_local_takes_over_an_installed_shared_skill(self, tmp_path):
+        shared, dev = self._setup(tmp_path)
+        assert _invoke(tmp_path, 'install').exit_code == 0
+
+        result = _invoke(tmp_path, 'install', '--local', str(dev))
+
+        assert result.exit_code == 0, result.output
+        link = _sources_dir(tmp_path) / 'dev'
+        assert _link_target(tmp_path, 'claude', 'demo') == link
+        assert _override_line('demo', link, shared) in result.output
+        demos = [s for s in _load_lock(tmp_path)['skills'] if s['name'] == 'demo']
+        assert len(demos) == 1
+        assert Path(demos[0]['local_path']).expanduser() == link
+        assert 'other' in _lock_entries(tmp_path)
+
+        follow_up = _invoke(tmp_path, 'install')
+        assert follow_up.exit_code == 0, follow_up.output
+        assert 'up to date' in follow_up.output
+
+    def test_direct_reinstall_of_the_shared_package_keeps_the_local_version(self, tmp_path):
+        shared, dev = self._setup(tmp_path)
+        assert _invoke(tmp_path, 'install', '--local', str(dev)).exit_code == 0
+        assert _invoke(tmp_path, 'install').exit_code == 0
+        link = _sources_dir(tmp_path) / 'dev'
+
+        result = _invoke(tmp_path, 'install', str(shared), 'demo')
+
+        assert result.exit_code == 0, result.output
+        assert _link_target(tmp_path, 'claude', 'demo') == link
+        assert _override_line('demo', link, shared) in result.output
+        demos = [s for s in _load_lock(tmp_path)['skills'] if s['name'] == 'demo']
+        assert len(demos) == 1
+        assert Path(demos[0]['local_path']).expanduser() == link
+
+    def test_between_local_sources_the_first_entry_name_wins(self, tmp_path):
+        _write_config_with_agents(tmp_path, [], ['claude'])
+        first = self._add_local_link(tmp_path, _make_singleton(tmp_path / 'src', 'a-dev', 'demo'))
+        second = self._add_local_link(tmp_path, _make_singleton(tmp_path / 'src', 'b-dev', 'demo'))
+
+        result = _invoke(tmp_path, 'install')
+        again = _invoke(tmp_path, 'install')
+
+        assert result.exit_code == 0, result.output
+        assert _link_target(tmp_path, 'claude', 'demo') == first
+        assert _override_line('demo', first, second) in result.output
+        assert 'up to date' in again.output

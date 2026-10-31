@@ -70,7 +70,16 @@ skm install --local ~/Code/work-only-skills
 
 This symlinks the directory to `~/.config/skm/local_sources/work-only-skills` and installs it right away. `skills.yaml` is not modified. The `local_sources/` directory contains a `.gitignore` with `*`, so it never gets committed, even if your repo's own `.gitignore` doesn't list it.
 
-Every later `skm install` also installs each entry in `local_sources/` as a `local_path:` package: all detected skills, default agents. To drop one, delete its link and run `skm install`. `skm remove <skill>` deletes the link for you when it removes the last installed skill from that source.
+Every later `skm install` also installs each entry in `local_sources/` as a `local_path:` package: all detected skills, default agents. To drop one, delete its link and run `skm install`.
+
+A local source wins over any `skills.yaml` package that provides a skill with the same name, so you can point one device at a development copy of a shared skill. The shared version is skipped (not linked, not in the lock), and every install prints the override:
+
+```
+Local source overrides
+  demo: ~/.config/skm/local_sources/demo-dev overrides https://github.com/me/skills
+```
+
+Delete the local source and run `skm install` to get the shared version back. When two local sources provide the same skill, the entry whose name sorts first wins. `skm remove <skill>` deletes the link for you when it removes the last installed skill from that source.
 
 ## Commands
 

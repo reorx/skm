@@ -153,6 +153,7 @@ def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes,
         config = SkmConfig(packages=[])
 
     default_agents = resolve_agents(config.agents, ctx.obj['agents_dir'])
+    local_sources_dir = get_local_sources_dir(config_path)
 
     # Resolve source
     source_path = Path(source).expanduser()
@@ -188,6 +189,7 @@ def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes,
                     known_agents=default_agents,
                     force=force,
                     verbose=verbose,
+                    local_sources=_local_source_packages(config, local_sources_dir, warn=False),
                 )
                 return
 
@@ -277,6 +279,7 @@ def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes,
         known_agents=default_agents,
         force=force,
         verbose=verbose,
+        local_sources=_local_source_packages(config, local_sources_dir, warn=False),
     )
 
 
@@ -304,7 +307,8 @@ def _install_local_source(ctx, local_dir: Path, force: bool, verbose: bool) -> N
     if not detected:
         raise click.ClickException(f'No skills found in {target_label}')
 
-    link, created = add_local_source(get_local_sources_dir(config_path), target)
+    sources_dir = get_local_sources_dir(config_path)
+    link, created = add_local_source(sources_dir, target)
     if created:
         click.echo(f'Linked local source {compact_path(str(link))} -> {target_label}')
 
@@ -315,13 +319,14 @@ def _install_local_source(ctx, local_dir: Path, force: bool, verbose: bool) -> N
         known_agents=resolve_agents(config.agents, ctx.obj['agents_dir']),
         force=force,
         verbose=verbose,
+        local_sources=_local_source_packages(config, sources_dir, warn=False),
     )
 
 
-def _local_source_packages(config: SkmConfig, sources_dir: Path) -> list[SkillRepoConfig]:
-    """Turn usable local_sources/ entries into local_path packages, warning about skipped ones."""
+def _local_source_packages(config: SkmConfig, sources_dir: Path, warn: bool = True) -> list[SkillRepoConfig]:
+    """Turn usable local_sources/ entries into local_path packages, optionally warning about skipped ones."""
     usable, broken = scan_local_sources(sources_dir)
-    for entry in broken:
+    for entry in broken if warn else []:
         click.secho(
             f'Warning: skipping local source {compact_path(str(entry))}: not a directory (dangling link?)',
             fg='yellow',
@@ -329,11 +334,12 @@ def _local_source_packages(config: SkmConfig, sources_dir: Path) -> list[SkillRe
     packages = []
     for entry in usable:
         if find_configured_duplicate(config, entry) is not None:
-            click.secho(
-                f'Warning: skipping local source {compact_path(str(entry))}: '
-                'same directory as a local_path package in skills.yaml',
-                fg='yellow',
-            )
+            if warn:
+                click.secho(
+                    f'Warning: skipping local source {compact_path(str(entry))}: '
+                    'same directory as a local_path package in skills.yaml',
+                    fg='yellow',
+                )
             continue
         packages.append(SkillRepoConfig(local_path=str(entry)))
     return packages

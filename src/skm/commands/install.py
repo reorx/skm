@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import click
+from pydantic import BaseModel
 
 from skm.detect import detect_skills
 from skm.git import clone_or_pull, get_head_commit, repo_url_to_dirname
@@ -10,6 +11,13 @@ from skm.linker import find_ignored_includes, link_skill, unlink_skill, resolve_
 from skm.lock import load_lock, save_lock
 from skm.types import ResolvedAgent, InstalledSkill, LockFile, SkillRepoConfig, SkmConfig
 from skm.utils import compact_path, same_install_location
+
+
+class LocalOverrides(BaseModel):
+    """Skills that local sources install, plus the overrides seen while installing."""
+
+    owners: dict[str, SkillRepoConfig] = {}  # skill name -> local source that installs it
+    notes: list[tuple[str, str, str]] = []  # (skill name, winner label, overridden source label)
 
 
 STATUS_COLORS = {
@@ -79,6 +87,44 @@ def _dedup_skills(skills, source_label, verbose=False):
     return result
 
 
+def _source_label(repo_config: SkillRepoConfig) -> str:
+    return compact_path(repo_config.source_key)
+
+
+def _collect_local_overrides(local_sources: list[SkillRepoConfig]) -> LocalOverrides:
+    """Local sources outrank skills.yaml packages; between local sources the first entry wins."""
+    owners: dict[str, SkillRepoConfig] = {}
+    for source in local_sources:
+        try:
+            detected = detect_skills(Path(source.local_path).expanduser())
+        except ValueError as e:
+            raise click.ClickException(str(e))
+        for skill in detected:
+            owners.setdefault(skill.name, source)
+    return LocalOverrides(owners=owners)
+
+
+def _drop_overridden(skills, repo_config: SkillRepoConfig, overrides: LocalOverrides):
+    """Leave out skills that another local source installs, noting each override."""
+    kept = []
+    for skill in skills:
+        owner = overrides.owners.get(skill.name)
+        if owner is None or owner.source_key == repo_config.source_key:
+            kept.append(skill)
+        else:
+            overrides.notes.append((skill.name, _source_label(owner), _source_label(repo_config)))
+    return kept
+
+
+def _print_overrides(overrides: LocalOverrides) -> None:
+    if not overrides.notes:
+        return
+    click.echo()
+    click.secho('Local source overrides', fg='cyan', bold=True)
+    for skill_name, winner, overridden in overrides.notes:
+        click.secho(f'  {skill_name}: {winner} overrides {overridden}', fg='cyan')
+
+
 def run_install(
     config: SkmConfig,
     lock_path: Path,
@@ -88,10 +134,14 @@ def run_install(
     verbose: bool = False,
     local_sources: list[SkillRepoConfig] | None = None,
 ) -> None:
-    """Sync config packages plus device-local sources (never saved to config)."""
+    """Sync config packages plus device-local sources (never saved to config).
+
+    A skill provided by a local source is skipped in every other package.
+    """
     lock = load_lock(lock_path)
     new_lock_skills: list[InstalledSkill] = []
     skipped_paths: set[str] = set()
+    overrides = _collect_local_overrides(local_sources or [])
 
     # Track which skills are configured (for removal detection)
     # Key: (skill_name, source_key)
@@ -104,7 +154,14 @@ def run_install(
         for repo_config in [*config.packages, *(local_sources or [])]:
             if repo_config.is_local:
                 count, lines = _install_local(
-                    repo_config, new_lock_skills, configured_skill_keys, known_agents, skipped_paths, force, verbose
+                    repo_config,
+                    new_lock_skills,
+                    configured_skill_keys,
+                    known_agents,
+                    skipped_paths,
+                    force,
+                    verbose,
+                    overrides,
                 )
             else:
                 count, lines = _install_repo(
@@ -116,6 +173,7 @@ def run_install(
                     skipped_paths,
                     force,
                     verbose,
+                    overrides,
                 )
 
             added_count += count
@@ -136,6 +194,7 @@ def run_install(
         for line in all_deferred_lines:
             click.echo(line)
 
+    _print_overrides(overrides)
     removed_count = _remove_stale_links(lock.skills, new_lock_skills, configured_skill_keys, skipped_paths)
 
     # Summary line
@@ -201,7 +260,14 @@ def _remove_stale_links(old_skills, new_lock_skills, configured_skill_keys, skip
 
 
 def _install_local(
-    repo_config, new_lock_skills, configured_skill_keys, known_agents, skipped_paths, force=False, verbose=False
+    repo_config,
+    new_lock_skills,
+    configured_skill_keys,
+    known_agents,
+    skipped_paths,
+    force=False,
+    verbose=False,
+    overrides: LocalOverrides | None = None,
 ):
     """Install skills from a local path. Returns (added_count, deferred_lines)."""
     local_path = Path(repo_config.local_path).expanduser()
@@ -241,6 +307,8 @@ def _install_local(
         skills_to_install = detected
 
     skills_to_install = _dedup_skills(skills_to_install, source_label, verbose)
+    if overrides is not None:
+        skills_to_install = _drop_overridden(skills_to_install, repo_config, overrides)
 
     added_count = 0
     deferred_lines: list[str] = []
@@ -310,6 +378,7 @@ def _install_repo(
     skipped_paths,
     force=False,
     verbose=False,
+    overrides: LocalOverrides | None = None,
 ):
     """Install skills from a git repo. Returns (added_count, deferred_lines)."""
     repo_dir_name = repo_url_to_dirname(repo_config.repo)
@@ -391,6 +460,8 @@ def _install_repo(
         skills_to_install = detected
 
     skills_to_install = _dedup_skills(skills_to_install, repo_config.repo, verbose)
+    if overrides is not None:
+        skills_to_install = _drop_overridden(skills_to_install, repo_config, overrides)
 
     added_count = 0
     deferred_lines: list[str] = []
@@ -458,17 +529,31 @@ def run_install_package(
     known_agents: dict[str, ResolvedAgent],
     force: bool = False,
     verbose: bool = False,
+    local_sources: list[SkillRepoConfig] | None = None,
 ) -> None:
-    """Install a single package and merge results into the existing lock file."""
+    """Install a single package and merge results into the existing lock file.
+
+    local_sources decide precedence: skills they provide are skipped here unless
+    this package is the winning local source, which then takes over other
+    sources' lock entries for those skills.
+    """
     lock = load_lock(lock_path)
     new_lock_skills: list[InstalledSkill] = []
     configured_skill_keys: set[tuple[str, str]] = set()
+    overrides = _collect_local_overrides(local_sources or [])
 
     skipped_paths: set[str] = set()
     try:
         if repo_config.is_local:
             added_count, deferred_lines = _install_local(
-                repo_config, new_lock_skills, configured_skill_keys, known_agents, skipped_paths, force, verbose
+                repo_config,
+                new_lock_skills,
+                configured_skill_keys,
+                known_agents,
+                skipped_paths,
+                force,
+                verbose,
+                overrides,
             )
         else:
             added_count, deferred_lines = _install_repo(
@@ -480,6 +565,7 @@ def run_install_package(
                 skipped_paths,
                 force,
                 verbose,
+                overrides,
             )
     except BaseException:
         if not verbose:
@@ -492,7 +578,13 @@ def run_install_package(
             click.echo(line)
 
     # Merge: keep existing lock entries from other sources, replace entries from this source
+    # and entries of skills this package now overrides as the winning local source.
     source_key = repo_config.source_key
+    taken_over = {
+        s.name
+        for s in new_lock_skills
+        if (owner := overrides.owners.get(s.name)) is not None and owner.source_key == source_key
+    }
     merged_skills = []
     replaced = []
     for existing in lock.skills:
@@ -505,10 +597,15 @@ def run_install_package(
                 and existing.local_path
                 and str(Path(existing.local_path).expanduser()) == str(Path(source_key).expanduser())
             ):
+                if existing.name in taken_over:
+                    overrides.notes.append((existing.name, _source_label(repo_config), existing_source))
+                    replaced.append(existing)
+                    continue
                 merged_skills.append(existing)
                 continue
         replaced.append(existing)
     merged_skills.extend(new_lock_skills)
+    _print_overrides(overrides)
     removed_count = _remove_stale_links(replaced, merged_skills, configured_skill_keys, skipped_paths)
     if not verbose:
         parts = []

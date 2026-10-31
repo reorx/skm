@@ -75,7 +75,7 @@ Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from 
 
 ## Local Sources
 
-Lets one `skills.yaml` be shared across devices (config dir in git) while each device installs extra skills. Full `skm install` turns every usable entry into `SkillRepoConfig(local_path=<entry path>)` (all skills, default agents) and passes them via `run_install(local_sources=...)` — they must never be written to `skills.yaml`. The lock's `local_path` is the entry path, not the resolved target, which is how `skm remove` recognises a local-source skill (`is_local_source_path`); remove only ever unlinks the entry, never its target.
+Lets one `skills.yaml` be shared across devices (config dir in git) while each device installs extra skills. Full `skm install` turns every usable entry into `SkillRepoConfig(local_path=<entry path>)` (all skills, default agents) and passes them via `run_install(local_sources=...)` — they must never be written to `skills.yaml`. Local sources win same-name conflicts: `install.LocalOverrides` maps each skill name to the owning local source (first entry name wins among local sources); every other package skips it and `run_install_package` drops other sources' lock entries for skills its local source takes over, so `update` never re-links an overridden skill. The lock's `local_path` is the entry path, not the resolved target, which is how `skm remove` recognises a local-source skill (`is_local_source_path`); remove only ever unlinks the entry, never its target.
 
 ## Config Format (skills.yaml)
 
