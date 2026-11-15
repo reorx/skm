@@ -13,6 +13,7 @@
 
 - 记录：2026-10-29，agent override 评审第 5 条；复现场景 `update_shared_path`（`tmp/2026-10-29-agent-override-review/repro.py`）。
 - 仓库 A、B 都有 `demo`，后装的 B 占了 `codex/demo`。给 A 加 `excludes: [codex]`，A 有新提交后执行 `skm update`，B 的 `codex/demo` 被删，lock 仍记录 B 装在 codex，下次 `skm install` 才恢复。直接安装和全量 install 会保护其他包仍在用的路径，只有 `update.py` 的清理不会。
+- dynamic skill 的 update（`_update_dynamic`）清理旧路径时也是同样的做法，有同样的问题。
 - 处理方向：update 清理时排除 lock 里其他条目的 `linked_to`，最好复用 `install.py` 的 `_remove_stale_links`。
 
 ## 相对 local_path：软链目标相对于安装目录，导致 skill 不可读
@@ -27,3 +28,9 @@
 - 记录：2026-10-31，`skm install --local` 验收时发现；复现脚本 `tmp/2026-10-31-local-sources/same_name.sh`（改成两个 skills.yaml 包即可复现）。
 - 软链 agent 下，每次 `skm install` 先由前一个包换上自己的链接，后一个包再换回去，每次都报有新增，最终生效的是配置里排在后面的包。启用 openclaw 时，后一个包发现副本内容不同就弹覆盖确认，非终端环境下直接抛异常。local source 与 skills.yaml 之间、local source 彼此之间的同名已经有了明确优先级（local source 优先；local source 之间按条目名排序先者优先），这条只剩 skills.yaml 包之间的同名。
 - 处理方向：检测到 skills.yaml 包之间同名时直接报错，或者沿用 `LocalOverrides` 的思路改成先者优先并提示。改之前要考虑现有用户：目前实际生效的是后者。同类问题另见上面 update 清理那一条。
+
+## 安全：repo / local_path 里 SKILL.md 的 `name` 没做路径校验，可能写到 agent 目录外
+
+- 记录：2026-11-15，做 dynamic skill 时发现（`kb/plans/2026-11-15-dynamic-skill.md`）。
+- `name` 直接用作 `<agent 目录>/<name>`。如果 repo 里写了 `name: ../../.zshrc`，链接会建到 agent 目录外面；加上 `--force` 或在覆盖提示里选 y，原来的文件或目录会被删掉再换成链接。装不受信任的 repo，或者 name 写错的 repo，都会遇到。dynamic skill 已经用 `dynamic.SAFE_SKILL_NAME_RE` 校验过，repo 和 local_path 来源还没有。
+- 处理方向：在 `detect_skills` 或 `link_skill` 入口用同一个正则校验，不合法的 skill 打警告跳过。先补失败测试。

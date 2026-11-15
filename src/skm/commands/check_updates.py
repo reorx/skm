@@ -13,9 +13,12 @@ def run_check_updates(lock_path: Path, store_dir: Path) -> None:
         click.echo("No skills installed.")
         return
 
-    # Group by repo, skip local_path packages
+    # Group by repo, skip local_path packages and dynamic skills
     repos: dict[str, list] = {}
     for skill in lock.skills:
+        if skill.source_cmd is not None:
+            click.echo(f"Skipping dynamic skill: {skill.name} (run skm update {skill.name} to regenerate)")
+            continue
         if skill.repo is None:
             click.echo(f"Skipping local path package: {skill.name}")
             continue

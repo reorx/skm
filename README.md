@@ -1,6 +1,6 @@
 # SKM - Skill Manager
 
-A CLI tool that manages **global** AI agent skills from GitHub repos or local directories. Clone repos or link local paths, detect skills via `SKILL.md`, and symlink them into agent directories — all driven by a single YAML config.
+A CLI tool that manages **global** AI agent skills from GitHub repos, local directories, or CLIs that print their own skill. Clone repos or link local paths, detect skills via `SKILL.md`, and symlink them into agent directories — all driven by a single YAML config.
 
 > **Note:** skm manages skills at the user level (e.g. `~/.claude/skills/`), not at the project level. It is not intended for installing skills into project-scoped directories.
 
@@ -81,6 +81,28 @@ Local source overrides
 
 Delete the local source and run `skm install` to get the shared version back. When two local sources provide the same skill, the entry whose name sorts first wins. `skm remove <skill>` deletes the link for you when it removes the last installed skill from that source.
 
+### Dynamic skills (from a command's output)
+
+Some CLIs print their own skill, e.g. `tinyhost skill` writes a complete `SKILL.md` to stdout. Add it as a `source_cmd` package:
+
+```bash
+skm install --cmd "tinyhost skill" --agents-includes claude
+```
+
+or in `skills.yaml`:
+
+```yaml
+packages:
+  - source_cmd: tinyhost skill
+```
+
+skm runs the command with `sh -c` (pipes and environment variables work), without stdin, from your home directory, with a 60-second timeout. The output must be a `SKILL.md` with a frontmatter `name` made of letters, digits, `.`, `_` and `-`. skm saves it under the store (`~/.local/share/skm/skills/_dynamic/`) and links it like any other skill.
+
+- `skm install` runs the command only the first time. If it fails (for example, another device sharing your `skills.yaml` doesn't have that CLI), skm prints a warning, skips the package, and installs everything else.
+- `skm update <skill>` (or `--all`) runs the command again and relinks if the output changed. A failure here is an error.
+- `skm install --cmd` runs the command before touching `skills.yaml`, so a broken command never gets saved.
+- `check-updates` skips dynamic skills; run `skm update` to regenerate.
+
 ## Commands
 
 | Command | Description |
@@ -88,12 +110,13 @@ Delete the local source and run `skm install` to get the shared version back. Wh
 | `skm install` (or `skm i`) | Install all packages from config. Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent — also removes stale links (see below). |
 | `skm install <source> [skill]` (or `skm i`) | Install directly from a repo URL or local path without editing config. Interactively select skills and agents, then auto-update config. |
 | `skm install --local <dir>` | Link a directory into `local_sources/` and install it on this device only; `skills.yaml` is not changed. |
+| `skm install --cmd "<cmd>"` | Install a dynamic skill from a command's stdout and add it to `skills.yaml` as `source_cmd`. |
 | `skm list` | Show installed skills and their linked paths. |
 | `skm list --all` | Show all skills across all agent directories, marking which are managed by skm. |
 | `skm view <source>` | Browse and preview skills from a repo URL or local path without installing. |
 | `skm edit` | Open `skills.yaml` in `$EDITOR` (falls back to system default). Shows diff after editing. |
-| `skm check-updates` | Fetch remotes and show available updates (skips `local_path` packages). |
-| `skm update <skill>` | Pull latest for a skill's repo, re-detect, re-link, update lock (skips `local_path` packages). |
+| `skm check-updates` | Fetch remotes and show available updates (skips `local_path` packages and dynamic skills). |
+| `skm update <skill>` | Pull latest for a skill's repo (or rerun a dynamic skill's command), re-detect, re-link, update lock (skips `local_path` packages). |
 
 ## Config Format
 
@@ -130,9 +153,11 @@ packages:
     skills_excludes:         # optional: install all skills EXCEPT these (mutually exclusive with skills)
       - team-squad
       - team-council
+
+  - source_cmd: tinyhost skill                  # dynamic skill: the command's stdout is the SKILL.md
 ```
 
-Each package must specify exactly one of `repo` or `local_path`. Local path packages use the directory directly (no cloning) and are skipped by `check-updates` and `update`.
+Each package must specify exactly one of `repo`, `local_path` or `source_cmd`. Local path packages use the directory directly (no cloning) and are skipped by `check-updates` and `update`. A `source_cmd` package produces exactly one skill, so it only accepts `agents`; see [Dynamic skills](#dynamic-skills-from-a-commands-output).
 
 Repo packages are cloned with a sparse checkout: skm runs `git clone --filter=blob:none --no-checkout`, lists the tree with `git ls-tree`, and checks out only the directories that contain a `SKILL.md` (using the same detection rules as below, honoring `skills_dir`). A large monorepo that ships a couple of skills therefore costs a few hundred KB on disk instead of the whole working tree. The store stays a normal git repo, so `check-updates` and `update` work unchanged; the sparse set is recomputed after every pull so skills added upstream are picked up automatically. Repos whose root is itself a skill are checked out in full.
 

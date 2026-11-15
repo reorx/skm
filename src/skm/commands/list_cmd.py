@@ -21,8 +21,10 @@ def _format_skill(skill: InstalledSkill, known_agents: dict[str, ResolvedAgent],
     click.echo(skill.name)
 
     gray = dict(fg='bright_black')
-    source = skill.repo or skill.local_path or 'unknown'
-    click.echo(click.style(f'  repo: {source}', **gray))
+    if skill.source_cmd is not None:
+        click.echo(click.style(f'  cmd: {skill.source_cmd}', **gray))
+    else:
+        click.echo(click.style(f'  repo: {skill.source or "unknown"}', **gray))
     if skill.commit:
         click.echo(click.style(f'  commit: {skill.commit[:8]}', **gray))
 
@@ -92,7 +94,7 @@ def run_list_all(lock_path: Path, known_agents: dict[str, ResolvedAgent]) -> Non
             if link_str in managed_links:
                 skill = managed_links[link_str]
                 marker = click.style('skm', fg='green')
-                source = skill.repo or skill.local_path or 'unknown'
+                source = f'cmd: {skill.source_cmd}' if skill.source_cmd is not None else skill.source or 'unknown'
                 click.echo(f'  {entry.name}  ({marker}, {source})')
             else:
                 click.echo(f'  {entry.name}')

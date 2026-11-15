@@ -1,9 +1,11 @@
 import shutil
+import subprocess
 from pathlib import Path
 
 import click
 
 from skm.detect import detect_skills
+from skm.dynamic import dynamic_skill_dir, generate_dynamic_skill, load_dynamic_skill
 from skm.git import clone_or_pull, get_head_commit, get_log_between, repo_url_to_dirname
 from skm.linker import find_ignored_includes, unlink_skill, link_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
@@ -21,16 +23,17 @@ def run_update(
 ) -> None:
     lock = load_lock(lock_path)
 
-    # Determine which repos to update
+    # Determine which repos and source commands to update
+    repos_to_update: dict[str, list[InstalledSkill]] = {}
+    cmds_to_update: dict[str, None] = {}  # ordered set of source_cmd strings
     if update_all:
-        repos_to_update: dict[str, list[InstalledSkill]] = {}
         for s in lock.skills:
-            if s.repo is None:
-                continue
-            repos_to_update.setdefault(s.repo, []).append(s)
+            if s.source_cmd is not None:
+                cmds_to_update[s.source_cmd] = None
+            elif s.repo is not None:
+                repos_to_update.setdefault(s.repo, []).append(s)
     else:
         # Find requested skills and collect their repos
-        repos_to_update = {}
         for name in skill_names:
             found = None
             for s in lock.skills:
@@ -40,17 +43,22 @@ def run_update(
             if found is None:
                 click.echo(f"Skill '{name}' is not installed.")
                 raise SystemExit(1)
+            if found.source_cmd is not None:
+                cmds_to_update[found.source_cmd] = None
+                continue
             if found.repo is None:
                 click.echo(f"Skill '{name}' is from a local path, skipping update.")
                 continue
             repos_to_update.setdefault(found.repo, []).append(found)
 
-    if not repos_to_update:
+    if not repos_to_update and not cmds_to_update:
         click.echo('Nothing to update.')
         return
 
     for repo_url, skills in repos_to_update.items():
         _update_repo(repo_url, config, lock, store_dir, known_agents)
+    for cmd in cmds_to_update:
+        _update_dynamic(cmd, config, lock, store_dir, known_agents)
 
     save_lock(lock, lock_path)
     click.echo('Lock file updated.')
@@ -160,3 +168,63 @@ def _update_repo(
     # Remove stale entries (iterate in reverse to preserve indices)
     for i in reversed(stale_indices):
         lock.skills.pop(i)
+
+
+def _update_dynamic(
+    cmd: str,
+    config: SkmConfig,
+    lock,
+    store_dir: Path,
+    known_agents: dict[str, ResolvedAgent],
+) -> None:
+    """Rerun a source_cmd and relink its skill when the output changed.
+
+    Unlike install, a failing command is an error: the user asked for this update.
+    """
+    repo_config = next((c for c in config.packages if c.source_cmd == cmd), None)
+    if repo_config is None:
+        click.echo(f"  Error: source_cmd '{cmd}' not found in config. Cannot determine target agents.")
+        raise SystemExit(1)
+
+    ignored = find_ignored_includes(repo_config.agents, known_agents)
+    if ignored:
+        click.secho(
+            f'  Warning: package {cmd} includes agents not in agents.default, ignored: {", ".join(ignored)}',
+            fg='yellow',
+        )
+
+    click.echo(f'Running {click.style(cmd, fg="cyan")}...')
+    dest = dynamic_skill_dir(store_dir, cmd)
+    try:
+        changed = generate_dynamic_skill(cmd, dest)
+        skill = load_dynamic_skill(dest)
+    except (ValueError, subprocess.TimeoutExpired) as e:
+        raise click.ClickException(str(e)) from e
+
+    if not changed:
+        click.echo(click.style('  ✔ Already up to date', fg='green'))
+        return
+    click.echo(f'  Regenerated {click.style(skill.name, fg="green")}')
+
+    linked_paths = []
+    for agent in resolve_target_agents(repo_config.agents, known_agents).values():
+        link, _status = link_skill(skill.path, skill.name, agent.path, force=True, install_mode=agent.install_mode)
+        linked_paths.append(compact_path(str(link)))
+
+    old_entries = [s for s in lock.skills if s.source_cmd == cmd]
+    for old in old_entries:
+        for old_path in old.linked_to:
+            if not any(same_install_location(old_path, new_path) for new_path in linked_paths):
+                path = Path(old_path).expanduser()
+                if path.is_symlink() or path.is_dir():
+                    unlink_skill(path.name, str(path.parent))
+                    click.secho(f'  Removed stale link {old_path}', fg='red')
+
+    new_entry = InstalledSkill(name=skill.name, source_cmd=cmd, skill_path='.', linked_to=linked_paths)
+    skills = []
+    for s in lock.skills:
+        if s.source_cmd != cmd:
+            skills.append(s)
+        elif new_entry not in skills:
+            skills.append(new_entry)
+    lock.skills = skills

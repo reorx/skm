@@ -50,6 +50,8 @@ def _raw_pkg_source_key(raw_pkg: dict) -> str:
     """Extract source key from a raw YAML package dict."""
     if 'local_path' in raw_pkg:
         return str(Path(raw_pkg['local_path']).expanduser())
+    if 'source_cmd' in raw_pkg:
+        return raw_pkg['source_cmd']
     return raw_pkg.get('repo', '')
 
 

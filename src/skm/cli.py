@@ -91,13 +91,20 @@ def _resolve_list_agents(config_path: Path, agents_dir: str | None, default_only
     'Device-local: never written to skills.yaml.',
 )
 @click.option(
+    '--cmd',
+    'source_cmd',
+    default=None,
+    help='Install a dynamic skill: run this shell command and use its stdout as SKILL.md. '
+    'Saved to skills.yaml as `source_cmd`.',
+)
+@click.option(
     '--force', is_flag=True, default=False, help='Override existing non-symlink skill directories without prompting.'
 )
 @click.option('-v', '--verbose', is_flag=True, default=False, help='Show detailed output for every operation.')
 @click.option('--agents-includes', default=None, help='Comma-separated agents to include (skips interactive).')
 @click.option('--agents-excludes', default=None, help='Comma-separated agents to exclude (skips interactive).')
 @click.pass_context
-def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes, agents_excludes):
+def install(ctx, source, skill_name, local_dir, source_cmd, force, verbose, agents_includes, agents_excludes):
     """Install skills from config or directly from a source.
 
     SOURCE can be a repo URL or local path. If omitted, installs from config
@@ -108,6 +115,14 @@ def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes,
     from skm.detect import detect_skills
     from skm.git import clone_or_pull, repo_url_to_dirname
     from skm.lock import load_lock
+
+    if source_cmd is not None:
+        if source is not None or local_dir is not None:
+            raise click.UsageError('--cmd cannot be combined with SOURCE or --local.')
+        if agents_includes and agents_excludes:
+            raise click.UsageError('Cannot specify both --agents-includes and --agents-excludes')
+        _install_cmd_source(ctx, source_cmd.strip(), agents_includes, agents_excludes, force=force, verbose=verbose)
+        return
 
     if local_dir is not None:
         if source is not None:
@@ -228,25 +243,14 @@ def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes,
         ).source_key,
         is_local,
     )
-    if agents_includes:
-        agents_config = AgentsConfig(includes=[a.strip() for a in agents_includes.split(',')])
-    elif agents_excludes:
-        agents_config = AgentsConfig(excludes=[a.strip() for a in agents_excludes.split(',')])
-    elif existing_pkg is not None:
+    if existing_pkg is not None and not (agents_includes or agents_excludes):
         # Repo already in config, keep existing agents setting
         agents_config = existing_pkg.agents
     else:
-        agent_names = list(default_agents)
-        agent_indices = interactive_multi_select(agent_names, header='Select agents:', preselected=None)
-        if agent_indices is None:
+        picked, agents_config = _choose_agents_config(agents_includes, agents_excludes, default_agents)
+        if not picked:
             click.echo('Cancelled.')
             return
-
-        selected_agent_names = [agent_names[i] for i in agent_indices]
-        if set(selected_agent_names) == set(agent_names):
-            agents_config = None  # all agents = no filter needed
-        else:
-            agents_config = AgentsConfig(includes=selected_agent_names)
 
     # Build SkillRepoConfig
     skill_names = [s.name for s in selected_skills]
@@ -284,6 +288,78 @@ def install(ctx, source, skill_name, local_dir, force, verbose, agents_includes,
 
 
 cli.add_alias('i', 'install')
+
+
+def _choose_agents_config(
+    agents_includes: str | None, agents_excludes: str | None, default_agents: dict[str, ResolvedAgent]
+) -> tuple[bool, AgentsConfig | None]:
+    """Agents config from the flags, else an interactive pick where picking every agent means no filter.
+
+    Returns (False, None) when the picker is cancelled.
+    """
+    if agents_includes:
+        return True, AgentsConfig(includes=[a.strip() for a in agents_includes.split(',')])
+    if agents_excludes:
+        return True, AgentsConfig(excludes=[a.strip() for a in agents_excludes.split(',')])
+    agent_names = list(default_agents)
+    agent_indices = interactive_multi_select(agent_names, header='Select agents:', preselected=None)
+    if agent_indices is None:
+        return False, None
+    selected_agent_names = [agent_names[i] for i in agent_indices]
+    if set(selected_agent_names) == set(agent_names):
+        return True, None
+    return True, AgentsConfig(includes=selected_agent_names)
+
+
+def _install_cmd_source(
+    ctx, cmd: str, agents_includes: str | None, agents_excludes: str | None, force: bool, verbose: bool
+) -> None:
+    """Generate a dynamic skill from cmd, add it to skills.yaml, and install it.
+
+    The command runs (and its output is validated) before skills.yaml is touched,
+    so a broken command never lands in the config.
+    """
+    from skm.commands.install import run_install_package
+    from skm.dynamic import SOURCE_CMD_ERRORS, dynamic_skill_dir, generate_dynamic_skill, load_dynamic_skill
+
+    if not cmd:
+        raise click.UsageError('--cmd cannot be empty.')
+
+    config_path = ctx.obj['config_path']
+    config = _load_config(config_path) if config_path.exists() else SkmConfig(packages=[])
+    default_agents = resolve_agents(config.agents, ctx.obj['agents_dir'])
+
+    click.echo(f'Running {click.style(cmd, fg="cyan")}...')
+    dest = dynamic_skill_dir(ctx.obj['store_dir'], cmd)
+    try:
+        generate_dynamic_skill(cmd, dest)
+        skill = load_dynamic_skill(dest)
+    except SOURCE_CMD_ERRORS as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f'Generated skill {click.style(skill.name, fg="yellow")}')
+
+    pkg = next((p for p in config.packages if p.source_cmd == cmd), None)
+    if pkg is not None:
+        click.echo('Command is already in skills.yaml; keeping its agents setting.')
+    else:
+        picked, agents_config = _choose_agents_config(agents_includes, agents_excludes, default_agents)
+        if not picked:
+            click.echo('Cancelled.')
+            return
+        pkg = SkillRepoConfig(source_cmd=cmd, agents=agents_config)
+        upsert_package(config, pkg)
+        save_config(config, config_path)
+        click.echo(f'Config saved: {config_path}')
+
+    run_install_package(
+        repo_config=pkg,
+        lock_path=ctx.obj['lock_path'],
+        store_dir=ctx.obj['store_dir'],
+        known_agents=default_agents,
+        force=force,
+        verbose=verbose,
+        local_sources=_local_source_packages(config, get_local_sources_dir(config_path), warn=False),
+    )
 
 
 def _install_local_source(ctx, local_dir: Path, force: bool, verbose: bool) -> None:

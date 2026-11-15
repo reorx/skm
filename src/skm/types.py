@@ -60,6 +60,7 @@ class AgentsConfig(BaseModel):
 class SkillRepoConfig(BaseModel):
     repo: str | None = None
     local_path: str | None = None
+    source_cmd: str | None = None  # shell command whose stdout is a SKILL.md
     clone_strategy: str | None = None
     skills_dir: str | None = None
     skills: list[str] | None = None
@@ -68,11 +69,28 @@ class SkillRepoConfig(BaseModel):
 
     @model_validator(mode='after')
     def check_source(self):
-        if self.repo and self.local_path:
-            raise ValueError("Cannot specify both 'repo' and 'local_path'; exactly one must be set")
-        if not self.repo and not self.local_path:
-            raise ValueError("Must specify exactly one of 'repo' or 'local_path'")
+        sources = [f"'{name}'" for name in ('repo', 'local_path', 'source_cmd') if getattr(self, name)]
+        if len(sources) > 1:
+            raise ValueError(f'Cannot specify both {" and ".join(sources)}; exactly one must be set')
+        if not sources:
+            raise ValueError("Must specify exactly one of 'repo', 'local_path' or 'source_cmd'")
         return self
+
+    @model_validator(mode='after')
+    def check_source_cmd_fields(self):
+        if not self.source_cmd:
+            return self
+        extra = [n for n in ('clone_strategy', 'skills_dir', 'skills', 'skills_excludes') if getattr(self, n) is not None]
+        if extra:
+            raise ValueError(f"'source_cmd' generates a single skill and cannot be combined with: {', '.join(extra)}")
+        return self
+
+    @field_validator('source_cmd')
+    @classmethod
+    def check_source_cmd(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("'source_cmd' cannot be empty")
+        return v
 
     @model_validator(mode='after')
     def check_skills_mutual_exclusion(self):
@@ -97,9 +115,15 @@ class SkillRepoConfig(BaseModel):
         return self.local_path is not None
 
     @property
+    def is_dynamic(self) -> bool:
+        return self.source_cmd is not None
+
+    @property
     def source_key(self) -> str:
         if self.local_path:
             return str(Path(self.local_path).expanduser())
+        if self.source_cmd:
+            return self.source_cmd
         return self.repo
 
 
@@ -129,9 +153,15 @@ class InstalledSkill(BaseModel):
     name: str
     repo: str | None = None
     local_path: str | None = None
+    source_cmd: str | None = None
     commit: str | None = None
     skill_path: str  # relative path within repo to the skill dir
     linked_to: list[str]  # installation paths (home compacted to ~)
+
+    @property
+    def source(self) -> str:
+        """The package this skill came from, matching configured skill keys."""
+        return self.repo or self.local_path or self.source_cmd or ''
 
 
 class LockFile(BaseModel):

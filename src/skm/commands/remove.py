@@ -41,7 +41,7 @@ def run_remove(
             click.echo(click.style(f'  Link not found: {compact_path(str(p))}', dim=True))
 
     # Remove the skill from lock file
-    source_key = skill_entry.repo or skill_entry.local_path or ''
+    source_key = skill_entry.source
     lock.skills = [s for s in lock.skills if s.name != skill_name]
     save_lock(lock, lock_path)
     click.echo(f'Lock file updated: {lock_path}')
@@ -85,7 +85,7 @@ def run_remove(
             click.echo(f'  Removed package from config (no skills remaining)')
     else:
         # skills is None (all skills) — check if any other lock entries still reference this source
-        has_remaining = any((s.repo or s.local_path or '') == source_key for s in lock.skills)
+        has_remaining = any(s.source == source_key for s in lock.skills)
         if not has_remaining:
             config.packages.pop(pkg_index)
             config_modified = True

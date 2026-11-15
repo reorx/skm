@@ -1,6 +1,6 @@
 # SKM - Skill Manager
 
-A CLI tool that manages AI agent skills by cloning GitHub repos, detecting skills via `SKILL.md`, and symlinking them to agent directories based on a central YAML config.
+A CLI tool that manages AI agent skills by cloning GitHub repos (or linking local dirs, or capturing a CLI's printed SKILL.md), detecting skills via `SKILL.md`, and symlinking them to agent directories based on a central YAML config.
 
 ## Tech Stack
 
@@ -22,6 +22,7 @@ src/skm/
 ├── utils.py            # Utility functions (compact_path)
 ├── linker.py           # Symlink skills to agent dirs, resolve includes/excludes
 ├── local_sources.py    # Device-local sources: symlinks in <config dir>/local_sources/
+├── dynamic.py          # source_cmd packages: run a shell command, validate its stdout as SKILL.md, write it under the store
 └── commands/
     ├── install.py      # Clone repos, detect skills, link to agents, update lock
     ├── list_cmd.py     # Print installed skills from lock file
@@ -36,6 +37,7 @@ tests/
 ├── test_linker.py       # Symlink creation, agent filtering
 ├── test_install.py      # Install command unit tests
 ├── test_local_sources.py # `install --local`, local_sources scanning, remove of local-source skills
+├── test_dynamic.py      # source_cmd packages across config, install, update, list, remove, check-updates, `install --cmd`
 └── test_cli_e2e.py      # End-to-end CLI tests for all commands
 ```
 
@@ -44,7 +46,7 @@ tests/
 - **Config:** `~/.config/skm/skills.yaml` — YAML dict with `packages` (repo list) and optional `agents.default` / `agents.override`
 - **Lock:** `~/.config/skm/skills-lock.yaml` — tracks installed skills, commits, symlink paths
 - **Local sources:** `~/.config/skm/local_sources/` — always `skills.yaml`'s parent dir (so `--config` isolates it too); holds a self-ignoring `.gitignore` (`*`)
-- **Store:** `~/.local/share/skm/skills/` — cloned repos cached here
+- **Store:** `~/.local/share/skm/skills/` — cloned repos cached here; dynamic skills are generated into `_dynamic/<slug>-<hash8>/SKILL.md` inside it
 - **Agent dirs:** Skills are symlinked into each agent's skill directory (e.g. `~/.claude/skills/`, `~/.codex/skills/`)
 
 ## Architecture
@@ -69,6 +71,7 @@ Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from 
 
 - `skm install` — Sparse-clone repos (idempotent: skips pull if already cloned), detect skills, create symlinks, remove stale links, update lock. Treats `skills.yaml` as declarative state: removes links for skills dropped from config or agents changed by includes/excludes. Only removes links tracked in the lock file — manually created files in agent dirs are never touched.
 - `skm install --local <dir>` — Symlink `<dir>` (resolved absolute) into `local_sources/` and install just that source; never writes `skills.yaml`. See Local Sources.
+- `skm install --cmd "<cmd>"` — Run the command first and only then add a `source_cmd` package to `skills.yaml` and install it. See Dynamic Skills.
 - `skm list` — Show installed skills and their linked paths from lock file
 - `skm check-updates` — Fetch remotes, compare against locked commits, show changelog
 - `skm update <skill_name>` — Pull latest for a skill's repo, re-link, update lock
@@ -76,6 +79,10 @@ Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from 
 ## Local Sources
 
 Lets one `skills.yaml` be shared across devices (config dir in git) while each device installs extra skills. Full `skm install` turns every usable entry into `SkillRepoConfig(local_path=<entry path>)` (all skills, default agents) and passes them via `run_install(local_sources=...)` — they must never be written to `skills.yaml`. Local sources win same-name conflicts: `install.LocalOverrides` maps each skill name to the owning local source (first entry name wins among local sources); every other package skips it and `run_install_package` drops other sources' lock entries for skills its local source takes over, so `update` never re-links an overridden skill. The lock's `local_path` is the entry path, not the resolved target, which is how `skm remove` recognises a local-source skill (`is_local_source_path`); remove only ever unlinks the entry, never its target.
+
+## Dynamic Skills
+
+A `source_cmd:` package runs `sh -c <cmd>` (no stdin, cwd `~`, 60s timeout) and stores its stdout as one skill in `<store>/_dynamic/<slug>-<hash8>/`; the dir is keyed by the command string, so a changed command regenerates. Output is validated before anything is written: frontmatter `name` must match `^[A-Za-z0-9][A-Za-z0-9._-]*$` because it becomes a path in every agent dir. `install` runs the command only when nothing was generated yet and turns a failure into a warning that skips the package (shared configs on devices without the CLI); `update` always reruns it, fails loudly, rewrites `SKILL.md` in place (same inode, so hardlinked copies follow) and relinks only when the content changed. `check-updates` skips dynamic skills. Lock entries carry `source_cmd`; code that needs an entry's package uses `InstalledSkill.source`, never `repo or local_path`.
 
 ## Config Format (skills.yaml)
 
@@ -103,6 +110,10 @@ packages:
     skills_excludes:         # optional: install all skills EXCEPT these (mutually exclusive with skills)
       - team-squad
   - repo: https://github.com/blader/humanizer   # installs all detected skills to default agents
+  - source_cmd: tinyhost skill                  # dynamic skill: the command's stdout is the SKILL.md
+    agents:                                     # skills/skills_excludes/skills_dir/clone_strategy are rejected here
+      includes:
+        - claude
 ```
 
 `agents.default` selects which agents from `BUILTIN_AGENTS` are used as the base set. Per-package `agents.includes/excludes` then filters from that base set.

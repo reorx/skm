@@ -6,14 +6,18 @@ from skm.types import DetectedSkill
 
 def parse_skill_name(skill_md_path: Path) -> str:
     """Extract 'name' from SKILL.md YAML frontmatter."""
-    text = skill_md_path.read_text(encoding='utf-8')
+    return parse_skill_name_text(skill_md_path.read_text(encoding='utf-8'), str(skill_md_path))
+
+
+def parse_skill_name_text(text: str, origin: str) -> str:
+    """Extract 'name' from SKILL.md text; origin only labels error messages."""
     match = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
     if not match:
-        raise ValueError(f'No frontmatter found in {skill_md_path}')
+        raise ValueError(f'No frontmatter found in {origin}')
     for line in match.group(1).splitlines():
         if line.startswith('name:'):
             return line.split(':', 1)[1].strip().strip('\'"')
-    raise ValueError(f"No 'name' field in frontmatter of {skill_md_path}")
+    raise ValueError(f"No 'name' field in frontmatter of {origin}")
 
 
 def detect_skills(repo_path: Path, skills_dir: str | None = None) -> list[DetectedSkill]:
