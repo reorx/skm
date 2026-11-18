@@ -30,6 +30,7 @@ packages:
       - vercel-react-native-skills
   - repo: https://github.com/blader/humanizer
   - local_path: ~/Code/my-custom-skills       # use a local directory instead of a git repo
+  - source_cmd: tinyhost skill                # use the SKILL.md a CLI prints (see Dynamic skills)
 ```
 
 2. Run install (`skm i` for short):
@@ -38,7 +39,7 @@ packages:
 skm install
 ```
 
-Skills are cloned (or symlinked from local paths) into your agent directories (`~/.claude/skills/`, `~/.codex/skills/`, etc.).
+Skills are cloned (or symlinked from local paths, or generated from a command's output) into your agent directories (`~/.claude/skills/`, `~/.codex/skills/`, etc.).
 
 ### Install from a source directly
 
@@ -53,6 +54,9 @@ skm install https://github.com/vercel-labs/agent-skills vercel-react-best-practi
 
 # Install from a local directory
 skm install ~/Code/my-custom-skills
+
+# Install the skill a CLI prints to stdout (see Dynamic skills below)
+skm install --cmd "tinyhost skill"
 
 # Skip interactive prompts with --agents-includes / --agents-excludes
 skm install https://github.com/blader/humanizer --agents-includes claude,codex
@@ -83,17 +87,35 @@ Delete the local source and run `skm install` to get the shared version back. Wh
 
 ### Dynamic skills (from a command's output)
 
-Some CLIs print their own skill, e.g. `tinyhost skill` writes a complete `SKILL.md` to stdout. Add it as a `source_cmd` package:
+Some CLIs print their own skill, e.g. `tinyhost skill` writes a complete `SKILL.md` to stdout. Install it with `--cmd`:
 
-```bash
-skm install --cmd "tinyhost skill" --agents-includes claude
+```
+$ skm install --cmd "tinyhost skill"
+Running tinyhost skill...
+Generated skill tinyhost
+Select agents:
+> [x] standard
+  [x] claude
+Config saved: ~/.config/skm/skills.yaml
+  tinyhost  tinyhost from `tinyhost skill`
+    tinyhost -> [standard] ~/.agents/skills/tinyhost
+    tinyhost -> [claude] ~/.claude/skills/tinyhost
+added 1 skill
 ```
 
-or in `skills.yaml`:
+Keep every agent checked and the package follows `agents.default`; uncheck some to save an `includes` list. `--agents-includes claude` or `--agents-excludes standard` skips the prompt. The command is saved to `skills.yaml` as:
 
 ```yaml
 packages:
   - source_cmd: tinyhost skill
+```
+
+You can also write that entry by hand and run `skm install`. `skm list` shows the skill with its command:
+
+```
+tinyhost
+  cmd: tinyhost skill
+  agents: claude, standard
 ```
 
 skm runs the command with `sh -c` (pipes and environment variables work), without stdin, from your home directory, with a 60-second timeout. The output must be a `SKILL.md` with a frontmatter `name` made of letters, digits, `.`, `_` and `-`. skm saves it under the store (`~/.local/share/skm/skills/_dynamic/`) and links it like any other skill.
