@@ -103,13 +103,24 @@ def _resolve_list_agents(config_path: Path, agents_dir: str | None, default_only
 @click.option('-v', '--verbose', is_flag=True, default=False, help='Show detailed output for every operation.')
 @click.option('--agents-includes', default=None, help='Comma-separated agents to include (skips interactive).')
 @click.option('--agents-excludes', default=None, help='Comma-separated agents to exclude (skips interactive).')
+@click.option(
+    '-y',
+    '--yes',
+    is_flag=True,
+    default=False,
+    help='Skip the skill and agent pickers: install every skill to the default agents. '
+    'Existing directories are still kept unless --force is given.',
+)
 @click.pass_context
-def install(ctx, source, skill_name, local_dir, source_cmd, force, verbose, agents_includes, agents_excludes):
+def install(ctx, source, skill_name, local_dir, source_cmd, force, verbose, agents_includes, agents_excludes, yes):
     """Install skills from config or directly from a source.
 
     SOURCE can be a repo URL or local path. If omitted, installs from config
     plus every entry in local_sources/.
     SKILL_NAME optionally specifies a single skill to install from the source.
+
+    Without a terminal (scripts, coding agents) every prompt takes its default,
+    as if -y were given; directories in the way are kept, not overridden.
     """
     from skm.commands.install import run_install, run_install_package
     from skm.detect import detect_skills
@@ -121,7 +132,9 @@ def install(ctx, source, skill_name, local_dir, source_cmd, force, verbose, agen
             raise click.UsageError('--cmd cannot be combined with SOURCE or --local.')
         if agents_includes and agents_excludes:
             raise click.UsageError('Cannot specify both --agents-includes and --agents-excludes')
-        _install_cmd_source(ctx, source_cmd.strip(), agents_includes, agents_excludes, force=force, verbose=verbose)
+        _install_cmd_source(
+            ctx, source_cmd.strip(), agents_includes, agents_excludes, yes=yes, force=force, verbose=verbose
+        )
         return
 
     if local_dir is not None:
@@ -222,6 +235,8 @@ def install(ctx, source, skill_name, local_dir, source_cmd, force, verbose, agen
                 f'Skill "{skill_name}" not found in source. Available: {", ".join(s.name for s in detected)}'
             )
         selected_skills = matched
+    elif yes:
+        selected_skills = detected
     else:
         labels = [f'{s.name}  ({s.relative_path})' for s in detected]
         indices = interactive_multi_select(labels, header='Select skills to install:')
@@ -247,7 +262,7 @@ def install(ctx, source, skill_name, local_dir, source_cmd, force, verbose, agen
         # Repo already in config, keep existing agents setting
         agents_config = existing_pkg.agents
     else:
-        picked, agents_config = _choose_agents_config(agents_includes, agents_excludes, default_agents)
+        picked, agents_config = _choose_agents_config(agents_includes, agents_excludes, default_agents, yes)
         if not picked:
             click.echo('Cancelled.')
             return
@@ -291,16 +306,18 @@ cli.add_alias('i', 'install')
 
 
 def _choose_agents_config(
-    agents_includes: str | None, agents_excludes: str | None, default_agents: dict[str, ResolvedAgent]
+    agents_includes: str | None, agents_excludes: str | None, default_agents: dict[str, ResolvedAgent], yes: bool
 ) -> tuple[bool, AgentsConfig | None]:
     """Agents config from the flags, else an interactive pick where picking every agent means no filter.
 
-    Returns (False, None) when the picker is cancelled.
+    yes skips the pick and takes that no-filter default. Returns (False, None) when the picker is cancelled.
     """
     if agents_includes:
         return True, AgentsConfig(includes=[a.strip() for a in agents_includes.split(',')])
     if agents_excludes:
         return True, AgentsConfig(excludes=[a.strip() for a in agents_excludes.split(',')])
+    if yes:
+        return True, None
     agent_names = list(default_agents)
     agent_indices = interactive_multi_select(agent_names, header='Select agents:', preselected=None)
     if agent_indices is None:
@@ -312,7 +329,7 @@ def _choose_agents_config(
 
 
 def _install_cmd_source(
-    ctx, cmd: str, agents_includes: str | None, agents_excludes: str | None, force: bool, verbose: bool
+    ctx, cmd: str, agents_includes: str | None, agents_excludes: str | None, yes: bool, force: bool, verbose: bool
 ) -> None:
     """Generate a dynamic skill from cmd, add it to skills.yaml, and install it.
 
@@ -342,7 +359,7 @@ def _install_cmd_source(
     if pkg is not None:
         click.echo('Command is already in skills.yaml; keeping its agents setting.')
     else:
-        picked, agents_config = _choose_agents_config(agents_includes, agents_excludes, default_agents)
+        picked, agents_config = _choose_agents_config(agents_includes, agents_excludes, default_agents, yes)
         if not picked:
             click.echo('Cancelled.')
             return

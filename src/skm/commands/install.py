@@ -10,6 +10,7 @@ from skm.dynamic import SOURCE_CMD_ERRORS, dynamic_skill_dir, generate_dynamic_s
 from skm.git import clone_or_pull, get_head_commit, repo_url_to_dirname
 from skm.linker import find_ignored_includes, link_skill, unlink_skill, resolve_target_agents
 from skm.lock import load_lock, save_lock
+from skm.tui import has_terminal
 from skm.types import ResolvedAgent, InstalledSkill, LockFile, SkillRepoConfig, SkmConfig
 from skm.utils import compact_path, same_install_location
 
@@ -44,6 +45,9 @@ def _confirm_override(message: str) -> bool:
     """Prompt user with a y/n question, returns on single keypress."""
     _clear_progress()
     click.echo(f'{message} [y/N] ', nl=False)
+    if not has_terminal():
+        click.echo('N (no terminal to ask; use --force to override)')
+        return False
     c = click.getchar()
     click.echo()  # newline after keypress
     return c in ('y', 'Y')

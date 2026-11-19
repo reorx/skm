@@ -60,9 +60,14 @@ skm install --cmd "tinyhost skill"
 
 # Skip interactive prompts with --agents-includes / --agents-excludes
 skm install https://github.com/blader/humanizer --agents-includes claude,codex
+
+# Skip every prompt: all skills, default agents
+skm install https://github.com/vercel-labs/agent-skills -y
 ```
 
 This detects available skills, lets you pick which ones to install (unless a specific skill name is given), and automatically adds the package to your `skills.yaml` config.
+
+`-y` / `--yes` takes the pickers' defaults: every detected skill, and every default agent with no agent filter saved, so the package follows `agents.default`. When skm runs without a terminal (from a script or a coding agent), it does the same on its own and prints the choice it made. Neither overrides a real directory that is already in an agent's skill folder; that still needs `--force`.
 
 ### Device-local skills
 
@@ -103,7 +108,7 @@ Config saved: ~/.config/skm/skills.yaml
 added 1 skill
 ```
 
-Keep every agent checked and the package follows `agents.default`; uncheck some to save an `includes` list. `--agents-includes claude` or `--agents-excludes standard` skips the prompt. The command is saved to `skills.yaml` as:
+Keep every agent checked and the package follows `agents.default`; uncheck some to save an `includes` list. `-y` skips the prompt and keeps every agent; `--agents-includes claude` or `--agents-excludes standard` skips it and saves a filter. The command is saved to `skills.yaml` as:
 
 ```yaml
 packages:
@@ -130,7 +135,7 @@ skm runs the command with `sh -c` (pipes and environment variables work), withou
 | Command | Description |
 |---|---|
 | `skm install` (or `skm i`) | Install all packages from config. Clone repos (or link local paths), detect skills, symlink to agents, write lock file. Idempotent — also removes stale links (see below). |
-| `skm install <source> [skill]` (or `skm i`) | Install directly from a repo URL or local path without editing config. Interactively select skills and agents, then auto-update config. |
+| `skm install <source> [skill]` (or `skm i`) | Install directly from a repo URL or local path without editing config. Interactively select skills and agents (`-y` takes all), then auto-update config. |
 | `skm install --local <dir>` | Link a directory into `local_sources/` and install it on this device only; `skills.yaml` is not changed. |
 | `skm install --cmd "<cmd>"` | Install a dynamic skill from a command's stdout and add it to `skills.yaml` as `source_cmd`. |
 | `skm list` | Show installed skills and their linked paths. |

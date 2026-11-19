@@ -1,4 +1,11 @@
+import sys
+
 import click
+
+
+def has_terminal() -> bool:
+    """True when stdin is a terminal, i.e. someone can answer a prompt."""
+    return sys.stdin.isatty()
 
 
 def interactive_multi_select(
@@ -10,6 +17,7 @@ def interactive_multi_select(
 
     Returns list of selected indices, or None if cancelled.
     preselected: indices that start checked (default: all selected).
+    Without a terminal it returns the preselection right away instead of waiting for keys.
     """
     if not items:
         return []
@@ -18,6 +26,11 @@ def interactive_multi_select(
         selected = set(range(len(items)))
     else:
         selected = set(preselected)
+
+    if not has_terminal():
+        picked = ', '.join(items[i] for i in sorted(selected)) or 'nothing'
+        click.secho(f'{header or "Select:"} no terminal to ask, using the defaults: {picked}', fg='yellow')
+        return sorted(selected)
 
     current = 0
     total_lines = len(items) + (1 if header else 0)

@@ -38,6 +38,7 @@ tests/
 ├── test_install.py      # Install command unit tests
 ├── test_local_sources.py # `install --local`, local_sources scanning, remove of local-source skills
 ├── test_dynamic.py      # source_cmd packages across config, install, update, list, remove, check-updates, `install --cmd`
+├── test_noninteractive.py # `install -y` and prompts without a terminal (picker defaults, override answers No)
 └── test_cli_e2e.py      # End-to-end CLI tests for all commands
 ```
 
@@ -72,6 +73,7 @@ Paths stored in `skills-lock.yaml` (e.g. `linked_to`) use `compact_path()` from 
 - `skm install` — Sparse-clone repos (idempotent: skips pull if already cloned), detect skills, create symlinks, remove stale links, update lock. Treats `skills.yaml` as declarative state: removes links for skills dropped from config or agents changed by includes/excludes. Only removes links tracked in the lock file — manually created files in agent dirs are never touched.
 - `skm install --local <dir>` — Symlink `<dir>` (resolved absolute) into `local_sources/` and install just that source; never writes `skills.yaml`. See Local Sources.
 - `skm install --cmd "<cmd>"` — Run the command first and only then add a `source_cmd` package to `skills.yaml` and install it. See Dynamic Skills.
+- `skm install <source>|--cmd ... -y` — Skip the skill/agent pickers and take their defaults (all skills, all default agents → no agents filter saved). Explicit `--agents-includes/excludes` still win. See Non-interactive Runs.
 - `skm list` — Show installed skills and their linked paths from lock file
 - `skm check-updates` — Fetch remotes, compare against locked commits, show changelog
 - `skm update <skill_name>` — Pull latest for a skill's repo, re-link, update lock
@@ -83,6 +85,10 @@ Lets one `skills.yaml` be shared across devices (config dir in git) while each d
 ## Dynamic Skills
 
 A `source_cmd:` package runs `sh -c <cmd>` (no stdin, cwd `~`, 60s timeout) and stores its stdout as one skill in `<store>/_dynamic/<slug>-<hash8>/`; the dir is keyed by the command string, so a changed command regenerates. Output is validated before anything is written: frontmatter `name` must match `^[A-Za-z0-9][A-Za-z0-9._-]*$` because it becomes a path in every agent dir. `install` runs the command only when nothing was generated yet and turns a failure into a warning that skips the package (shared configs on devices without the CLI); `update` always reruns it, fails loudly, rewrites `SKILL.md` in place (same inode, so hardlinked copies follow) and relinks only when the content changed. `check-updates` skips dynamic skills. Lock entries carry `source_cmd`; code that needs an entry's package uses `InstalledSkill.source`, never `repo or local_path`.
+
+## Non-interactive Runs
+
+`tui.has_terminal()` (stdin is a TTY) gates every prompt. Without a terminal, `interactive_multi_select` returns its preselection (default: everything) and prints the choice in yellow, and `_confirm_override` answers No and points at `--force`; neither reads a key. The check lives inside the prompt functions, not in `cli.py`, so tests that monkeypatch `skm.cli.interactive_multi_select` or `_confirm_override` keep working under `CliRunner` (whose stdin is never a TTY). Never let a non-terminal default destroy anything: `-y` and the no-terminal path only pick defaults, they never imply `--force`.
 
 ## Config Format (skills.yaml)
 
